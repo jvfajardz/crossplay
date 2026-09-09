@@ -33,6 +33,7 @@
 #include "study/StudyActivity.h"
 #include "sudoku/SudokuActivity.h"
 #include "toybattle/ToyBattleActivity.h"
+#include "transit/TransitActivity.h"
 #include "trivia/TriviaActivity.h"
 #include "ui/ToyboxIcons.h"
 #include "wallpapers/WallpapersActivity.h"
@@ -68,6 +69,7 @@ constexpr shelf::Item kGames[] = {
     {"WAVELENGTH", &icon_wavelength_32, &WavelengthActivity::create},
 };
 constexpr shelf::Item kApps[] = {
+    {"TRANSIT", &icon_nearby_32, &TransitActivity::create},
     {"STUDY", &icon_study_32, &StudyActivity::create},
     {"HACKER NEWS", &icon_hackernews_32, &HackerNewsActivity::create},
     {"XKCD", &icon_xkcd_32, &XkcdActivity::create},
