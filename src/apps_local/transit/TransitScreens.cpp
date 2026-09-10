@@ -1,93 +1,124 @@
 #include "TransitScreens.h"
 
+#include <cstdio>
+
 #include "../ui/ToyboxMetrics.h"
 
 namespace transitui {
-
 namespace {
 
-constexpr int16_t kTabY = 72;
-constexpr int16_t kTabH = 50;
-constexpr int16_t kPanelTop = 142;
-constexpr int16_t kPanelGap = 12;
-constexpr int16_t kFooterH = 52;
+constexpr int16_t kHeaderH = 68;
+constexpr int16_t kRefreshW = 62;
+constexpr int16_t kPageMargin = 14;
 
-void drawDirection(toybox::Screen& screen, const fui::Rect& panel, const DirectionModel& model) {
-  fui::TextStyle heading = screen.theme().titleText;
-  heading.font = toybox::kBodyFont;
+void drawRefreshIcon(toybox::Screen& screen, const fui::Rect& box) {
+  const int16_t cx = static_cast<int16_t>(box.x + box.width / 2);
+  const int16_t cy = static_cast<int16_t>(box.y + box.height / 2);
+  const fui::Paint white = fui::Paint::solid(fui::Color::White);
+  const fui::Point points[] = {{static_cast<int16_t>(cx - 13), static_cast<int16_t>(cy - 2)},
+                               {static_cast<int16_t>(cx - 9), static_cast<int16_t>(cy - 10)},
+                               {cx, static_cast<int16_t>(cy - 14)},
+                               {static_cast<int16_t>(cx + 10), static_cast<int16_t>(cy - 10)},
+                               {static_cast<int16_t>(cx + 14), static_cast<int16_t>(cy - 2)},
+                               {static_cast<int16_t>(cx + 10), static_cast<int16_t>(cy + 8)},
+                               {static_cast<int16_t>(cx + 2), static_cast<int16_t>(cy + 13)}};
+  for (size_t i = 1; i < sizeof(points) / sizeof(points[0]); ++i)
+    screen.target().line(points[i - 1], points[i], 2, white);
+  screen.target().line(points[0], {static_cast<int16_t>(cx - 14), static_cast<int16_t>(cy - 11)}, 2, white);
+  screen.target().line(points[0], {static_cast<int16_t>(cx - 5), static_cast<int16_t>(cy - 4)}, 2, white);
+}
+
+void drawDirection(toybox::Screen& screen, const fui::Rect& row, const DirectionModel& model) {
+  fui::TextStyle heading;
+  heading.font = fui::FONT_SLOT_SMALL;
   heading.color = fui::Color::Black;
-  heading.align = fui::TextAlign::Left;
-  screen.target().text(fui::makeRect(panel.x, panel.y, panel.width, 32), model.heading, heading);
+  screen.target().text(fui::makeRect(row.x, row.y + 3, row.width, 25), model.heading, heading);
 
-  const int16_t rowTop = static_cast<int16_t>(panel.y + 38);
-  const int16_t rowH = static_cast<int16_t>((panel.height - 38) / 4);
-  fui::TextStyle time = screen.theme().bodyText;
-  time.font = toybox::kTileFont;
-  time.align = fui::TextAlign::Center;
+  int16_t x = row.x;
+  const int16_t y = static_cast<int16_t>(row.y + 29);
+  fui::TextStyle dash = heading;
+  dash.font = fui::FONT_SLOT_BODY;
+  screen.target().text(fui::makeRect(x, y, 14, 31), "-", dash);
+  x = static_cast<int16_t>(x + 15);
 
-  for (int i = 0; i < 4; ++i) {
-    const fui::Rect row = fui::makeRect(panel.x, static_cast<int16_t>(rowTop + i * rowH), panel.width, rowH);
-    if (i < model.count && model.times[i] != nullptr) {
-      screen.target().text(row, model.times[i], time);
-    } else {
-      fui::TextStyle empty = screen.theme().smallText;
-      empty.align = fui::TextAlign::Center;
-      screen.target().text(row, "--", empty);
+  for (int i = 0; i < model.count; ++i) {
+    char item[32];
+    std::snprintf(item, sizeof(item), "%s%s", model.times[i].label, i + 1 < model.count ? "," : "");
+    fui::TextStyle time;
+    time.font = fui::FONT_SLOT_BODY;
+    time.color = fui::Color::Black;
+    time.bold = model.times[i].highlighted;
+    const fui::Size measured = screen.target().measureText(time.font, item, time);
+    screen.target().text(fui::makeRect(x, y, measured.width + 7, 31), item, time);
+    if (model.times[i].cancelled) {
+      const int16_t strikeY = static_cast<int16_t>(y + screen.target().lineHeight(time.font) / 2);
+      screen.target().line({x, strikeY}, {static_cast<int16_t>(x + measured.width - 4), strikeY}, 1,
+                           fui::Paint::solid(fui::Color::Black));
     }
+    x = static_cast<int16_t>(x + measured.width + 8);
+    if (x >= row.right()) break;
   }
+
+  screen.target().line({row.x, static_cast<int16_t>(row.bottom() - 1)},
+                       {row.right(), static_cast<int16_t>(row.bottom() - 1)}, 1,
+                       fui::Paint::solid(fui::Color::DarkGray));
 }
 
 }  // namespace
 
 void build(toybox::Screen& screen, const Model& model) {
   toybox::absoluteChrome(screen);
-
-  fui::HeaderProps header;
-  header.title = "TRANSIT";
-  header.rightLabel = model.updated;
-  header.subtitleText = screen.theme().smallText;
-  header.subtitleText.color = fui::Color::White;
-  header.subtitleText.align = fui::TextAlign::Right;
-  header.borderEdges = fui::EdgesNone;
-  toybox::headerBand(screen, header);
-
   const fui::DeviceContext& device = screen.frame().device();
-  constexpr const char* labels[3] = {"306", "M52", "T26"};
-  constexpr fui::ActionId actions[3] = {ActionBus306, ActionMetro52, ActionTram26};
-  const int16_t usableW = static_cast<int16_t>(device.width - 2 * toybox::kMargin);
-  const int16_t tabW = static_cast<int16_t>((usableW - 2 * toybox::kGutter) / 3);
-  for (int i = 0; i < 3; ++i) {
-    fui::ButtonProps tab;
-    tab.label = labels[i];
-    tab.action = i == model.selectedTab ? fui::NO_ACTION : actions[i];
-    tab.styles = i == model.selectedTab ? toybox::invertedStyles() : toybox::rowStyles();
-    tab.radius = static_cast<uint8_t>(toybox::kPillRadius);
-    screen.button(
-        tab, fui::makeRect(static_cast<int16_t>(toybox::kMargin + i * (tabW + toybox::kGutter)), kTabY, tabW, kTabH));
-  }
+  const fui::Rect safe = device.safeRect();
 
+  const fui::Rect header = fui::makeRect(safe.x, safe.y, safe.width, kHeaderH);
+  screen.target().fill(header, fui::Paint::solid(fui::Color::Black));
+
+  fui::TextStyle title;
+  title.font = fui::FONT_SLOT_TITLE;
+  title.color = fui::Color::White;
+  title.bold = true;
+  screen.target().text(fui::makeRect(header.x + kPageMargin, header.y + 4, header.width - kRefreshW - 24, 34),
+                       "Transit Timetable", title);
+
+  char clock[48];
+  std::snprintf(clock, sizeof(clock), "updated %s, current time %s", model.updated[0] ? model.updated : "--:--",
+                model.current[0] ? model.current : "--:--");
+  fui::TextStyle meta;
+  meta.font = fui::FONT_SLOT_SMALL;
+  meta.color = fui::Color::White;
+  screen.target().text(fui::makeRect(header.x + kPageMargin, header.y + 38, header.width - kRefreshW - 24, 25), clock,
+                       meta);
+
+  const fui::Rect refreshRect =
+      fui::makeRect(static_cast<int16_t>(header.right() - kRefreshW - 8), header.y + 12, kRefreshW, 44);
+  fui::ButtonProps refresh;
+  refresh.label = "";
+  refresh.action = ActionRefresh;
+  refresh.styles = toybox::invertedStyles();
+  refresh.radius = 0;
+  screen.button(refresh, refreshRect);
+  drawRefreshIcon(screen, refreshRect);
+
+  const int16_t bodyTop = static_cast<int16_t>(header.bottom() + 2);
   if (model.notice != nullptr) {
-    fui::TextStyle notice = screen.theme().bodyText;
+    fui::TextStyle notice;
+    notice.font = fui::FONT_SLOT_BODY;
     notice.align = fui::TextAlign::Center;
     notice.maxLines = 4;
-    screen.target().text(fui::makeRect(toybox::kMargin, 230, usableW, 250), model.notice, notice);
-  } else {
-    const int16_t panelW = static_cast<int16_t>((usableW - kPanelGap) / 2);
-    const int16_t panelH = static_cast<int16_t>(device.height - kPanelTop - kFooterH - 2 * toybox::kMargin);
-    drawDirection(screen, fui::makeRect(toybox::kMargin, kPanelTop, panelW, panelH), model.directions[0]);
-    drawDirection(screen,
-                  fui::makeRect(static_cast<int16_t>(toybox::kMargin + panelW + kPanelGap), kPanelTop, panelW, panelH),
-                  model.directions[1]);
+    screen.target().text(fui::makeRect(safe.x + kPageMargin, bodyTop + 80, safe.width - 2 * kPageMargin, 220),
+                         model.notice, notice);
+    return;
   }
 
-  fui::ButtonProps refresh;
-  refresh.label = "REFRESH";
-  refresh.action = ActionRefresh;
-  refresh.styles = toybox::rowStyles();
-  refresh.radius = static_cast<uint8_t>(toybox::kPillRadius);
-  screen.button(
-      refresh, fui::makeRect(toybox::kMargin, static_cast<int16_t>(device.height - kFooterH - toybox::kMargin), usableW,
-                             kFooterH));
+  if (model.directionCount <= 0) return;
+  const int16_t rowH = static_cast<int16_t>((safe.bottom() - bodyTop) / model.directionCount);
+  for (int i = 0; i < model.directionCount; ++i) {
+    drawDirection(screen,
+                  fui::makeRect(safe.x + kPageMargin, static_cast<int16_t>(bodyTop + i * rowH),
+                                safe.width - 2 * kPageMargin, rowH),
+                  model.directions[i]);
+  }
 }
 
 }  // namespace transitui
