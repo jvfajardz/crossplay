@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <ctime>
 #include <memory>
 
 #include "../../activities/Activity.h"
@@ -20,29 +21,37 @@ class TransitActivity final : public Activity {
   void render(RenderLock&&) override;
 
  private:
+  static constexpr int kMaxDepartures = 5;
+  static constexpr int kMaxDirections = 8;
+
   struct Departure {
     char iso[26] = {};
     char label[24] = {};
+    std::time_t expected = 0;
+    bool delayed = false;
+    bool cancelled = false;
   };
 
   struct Direction {
     const char* heading = "";
-    Departure rows[4] = {};
+    Departure rows[kMaxDepartures] = {};
     int count = 0;
   };
 
   enum class Phase : uint8_t { Ready, Busy, Notice };
 
-  void chooseTab(int tab);
+  void prepareDirections();
   void ensureConnected();
   void onWifiChosen(bool connected);
   bool fetchCurrent();
-  bool fetchDirection(const char* timingPointCode, const char* line, const char* destination, Direction& out);
-  bool tramDay() const;
+  bool fetchOvapi(const char* timingPointCode, const char* line, const char* destination, Direction& out);
+  bool fetchTransitous(const char* stopId, const char* route, const char* headsign, std::time_t notBefore,
+                       int resultLimit, Direction& out);
+  bool saturday() const;
   void setNotice(const char* text);
 
-  int selectedTab_ = 0;
-  Direction directions_[2];
+  Direction directions_[kMaxDirections];
+  int directionCount_ = 0;
   Phase phase_ = Phase::Ready;
   bool pendingFetch_ = false;
   bool interactionsReady_ = false;

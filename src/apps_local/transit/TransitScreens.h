@@ -6,24 +6,26 @@ namespace transitui {
 
 namespace fui = freeink::ui;
 
-enum : fui::ActionId {
-  ActionBus306 = 700,
-  ActionMetro52 = 701,
-  ActionTram26 = 702,
-  ActionRefresh = 703,
+enum : fui::ActionId { ActionRefresh = 703 };
+
+struct DepartureModel {
+  const char* label = "";
+  bool highlighted = false;
+  bool cancelled = false;
 };
 
 struct DirectionModel {
   const char* heading = "";
-  const char* times[4] = {};
+  DepartureModel times[5] = {};
   int count = 0;
 };
 
 struct Model {
-  int selectedTab = 0;
   const char* updated = "";
+  const char* current = "";
   const char* notice = nullptr;
-  DirectionModel directions[2];
+  DirectionModel directions[8];
+  int directionCount = 0;
 };
 
 void build(toybox::Screen& screen, const Model& model);
