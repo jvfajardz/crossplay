@@ -29,6 +29,44 @@ To add an app to the device firmware, merge its branch into `custom-apps`. To
 remove an app from the device, rebuild `custom-apps` without that app; the
 standalone app branch remains available and independently maintainable.
 
+## Starting a new app from a new Codex task
+
+The user may begin a new task with only:
+
+> Let's create a new project.
+
+Treat that phrase as a request to create another independent CrossPlay app for
+the Xteink X4 Pro in this repository. Do not create a separate repository or
+place the new app on top of Transit.
+
+1. Read this entire file and inspect the current branches, worktrees, and remote
+   state before changing anything.
+2. Ask the user for the new app's name and one-sentence purpose if they were not
+   supplied. Gather further requirements conversationally before committing to
+   behavior that would materially affect the design.
+3. Check whether `upstream/xteink` has advanced and report it. Do not rebase or
+   publish merely because an update exists; follow the update workflow below
+   when the user elects to adopt it.
+4. Create `app-<name>` from the clean `xteink` branch. Use a short lowercase
+   kebab-case name, and refuse to overwrite an existing local or remote branch.
+5. Keep the app isolated under `src/apps_local/<name>/`, with only the minimum
+   shared shelf, build, font, or resource wiring needed by that app.
+6. Build a realistic web preview early when the app has a visual interface, so
+   layout and behavior can be reviewed before a device build.
+7. Implement and verify the app on its standalone branch. Build only the
+   explicit `x4pro` target and never publish an incomplete or failed build.
+8. Publish a test installer only when requested. Do not commit generated files
+   from `dist/`.
+9. After the user confirms the hardware test, commit and push `app-<name>`, then
+   merge that app into `custom-apps`, rebuild the combined firmware, and update
+   its installer. Keep the standalone app branch independently usable.
+10. Update this document when the new app adds permanent requirements, unusual
+    data sources, build constraints, or maintenance steps future tasks need.
+
+Unless the user says otherwise, “new project” means a new CrossPlay app within
+the existing `xteink x4 pro` Codex project and repository—not a new Codex saved
+project, filesystem folder, or GitHub repository.
+
 ## The only request needed
 
 Ask Codex:
