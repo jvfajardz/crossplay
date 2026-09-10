@@ -86,6 +86,21 @@ make no changes and report that the custom firmware is current.
 - If an upstream change makes the custom app unsafe or ambiguous, stop before
   publishing and explain the decision that is needed.
 
+## Build the combined firmware locally
+
+From PowerShell, while `custom-apps` is checked out:
+
+```powershell
+.\build-transit-x4pro.ps1
+```
+
+The script uses PlatformIO's isolated environment, builds only the ESP32-S3
+`x4pro` target, merges and validates the three flash regions, and writes the
+untracked image to `dist/crossplay-transit-test-x4pro-full.bin` with its SHA-256
+checksum. Set no global Python or PlatformIO environment variables; the script
+also enables UTF-8 output to avoid the Windows console failure seen during the
+first manual build.
+
 ## Manual Git reference
 
 These are the underlying branch operations when they are needed:
