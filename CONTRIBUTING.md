@@ -1,0 +1,71 @@
+# Maintaining the custom CrossPlay firmware
+
+This fork keeps upstream CrossPlay separate from our Xteink applications:
+
+- `upstream/xteink` is the original firmware from `ma-r-s/crossplay`.
+- `origin/xteink` is the clean mirror in `jvfajardz/crossplay`.
+- `origin/custom-apps` contains our Transit app and future custom applications.
+
+## The only request needed
+
+Ask Codex:
+
+> Check if CrossPlay got an update.
+
+Codex should perform the workflow below. If upstream has not advanced, it should
+make no changes and report that the custom firmware is current.
+
+## Update workflow
+
+1. Fetch `upstream` and compare `upstream/xteink` with `origin/xteink`.
+2. Review upstream release notes and commits for changes that could affect the
+   X4 Pro, application shelf, networking, partition layout, or web flashing.
+3. Fast-forward the local and fork `xteink` branches to `upstream/xteink`.
+   Never add custom commits to `xteink`.
+4. Rebase `custom-apps` onto the updated `xteink` branch. Resolve conflicts by
+   preserving upstream behavior and reapplying the custom apps as a small,
+   isolated layer under `src/apps_local/`.
+5. Verify that Transit remains above Study in the Apps shelf and still includes:
+   - bus 306 at Koogsingel in both directions;
+   - metro 52 end to end in both directions;
+   - tram 26 between Amsterdam Centraal and Diemerparklaan in both directions,
+     shown only on Saturdays.
+6. Format changed C/C++ files using the repository wrapper and build the explicit
+   `x4pro` PlatformIO environment. Do not publish a firmware image from a failed
+   or incomplete build.
+7. Merge the bootloader at `0x0`, partition table at `0x8000`, and application at
+   `0x10000` into one full ESP32-S3 image. Validate all three image markers and
+   calculate a SHA-256 checksum.
+8. Replace the firmware payload in the sibling `transit-installer` site, run its
+   formatter, linter, production build, and browser QA, then publish a new private
+   version at the existing installer URL.
+9. Push the rebased `custom-apps` branch with `--force-with-lease`. Never force
+   push `xteink`, and never push to `upstream`.
+10. Report the upstream version or commit, any conflicts or adaptations made,
+    firmware build result, checksum, and installer publication result.
+
+## Safety boundaries
+
+- Rebase and publication are deliberate operations; do not automate them merely
+  because upstream changed.
+- Refuse to flash builds for ESP32-C3 devices. This custom image targets the
+  Xteink X4 Pro's ESP32-S3.
+- Preserve user changes and unrelated worktree files.
+- Keep generated firmware in `dist/`; do not commit build artifacts to Git.
+- If an upstream change makes the custom app unsafe or ambiguous, stop before
+  publishing and explain the decision that is needed.
+
+## Manual Git reference
+
+These are the underlying branch operations when they are needed:
+
+```bash
+git fetch upstream
+git switch xteink
+git merge --ff-only upstream/xteink
+git push origin xteink
+
+git switch custom-apps
+git rebase xteink
+git push --force-with-lease origin custom-apps
+```
