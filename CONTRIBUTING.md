@@ -1,10 +1,33 @@
 # Maintaining the custom CrossPlay firmware
 
-This fork keeps upstream CrossPlay separate from our Xteink applications:
+This fork keeps upstream CrossPlay, individual applications, and the firmware
+installed on the device separate from one another:
 
 - `upstream/xteink` is the original firmware from `ma-r-s/crossplay`.
 - `origin/xteink` is the clean mirror in `jvfajardz/crossplay`.
-- `origin/custom-apps` contains our Transit app and future custom applications.
+- `origin/app-<name>` contains one independently maintained application.
+- `origin/custom-apps` combines the selected application branches into the
+  firmware that is built and flashed.
+
+## Branch structure
+
+```text
+xteink                  clean mirror of upstream/xteink
+|-- app-transit         xteink + Transit only
+|-- app-weather         xteink + Weather only (example)
+`-- app-calendar        xteink + Calendar only (example)
+
+custom-apps             xteink + every app selected for the device
+```
+
+New apps start from `xteink`, not from another app branch. An `app-<name>`
+branch must contain only that app and the smallest necessary shelf/build wiring.
+The device cannot combine branches while flashing, so `custom-apps` is the
+integration branch used to produce a firmware containing several apps.
+
+To add an app to the device firmware, merge its branch into `custom-apps`. To
+remove an app from the device, rebuild `custom-apps` without that app; the
+standalone app branch remains available and independently maintainable.
 
 ## The only request needed
 
@@ -22,26 +45,34 @@ make no changes and report that the custom firmware is current.
    X4 Pro, application shelf, networking, partition layout, or web flashing.
 3. Fast-forward the local and fork `xteink` branches to `upstream/xteink`.
    Never add custom commits to `xteink`.
-4. Rebase `custom-apps` onto the updated `xteink` branch. Resolve conflicts by
-   preserving upstream behavior and reapplying the custom apps as a small,
+4. Rebase each `app-<name>` branch onto the updated `xteink` branch. Resolve
+   conflicts by preserving upstream behavior and keeping each app as a small,
    isolated layer under `src/apps_local/`.
-5. Verify that Transit remains above Study in the Apps shelf and still includes:
+5. Recreate or rebase `custom-apps` from the updated `xteink` branch and merge
+   the selected app branches into it. Do not develop an app directly on top of
+   a different app branch.
+6. Verify that Transit remains above Study in the Apps shelf and still includes:
    - bus 306 at Koogsingel in both directions;
    - metro 52 end to end in both directions;
+   - bus 37 between Noord and Amstelstation in both directions, with the
+     Noord departure window based on the next 306 departure plus 30 minutes;
+   - NS between Purmerend Overwhere and Sloterdijk in both directions on
+     non-Saturdays;
    - tram 26 between Amsterdam Centraal and Diemerparklaan in both directions,
      shown only on Saturdays.
-6. Format changed C/C++ files using the repository wrapper and build the explicit
+7. Format changed C/C++ files using the repository wrapper and build the explicit
    `x4pro` PlatformIO environment. Do not publish a firmware image from a failed
    or incomplete build.
-7. Merge the bootloader at `0x0`, partition table at `0x8000`, and application at
+8. Merge the bootloader at `0x0`, partition table at `0x8000`, and application at
    `0x10000` into one full ESP32-S3 image. Validate all three image markers and
    calculate a SHA-256 checksum.
-8. Replace the firmware payload in the sibling `transit-installer` site, run its
+9. Replace the firmware payload in the sibling `transit-installer` site, run its
    formatter, linter, production build, and browser QA, then publish a new private
    version at the existing installer URL.
-9. Push the rebased `custom-apps` branch with `--force-with-lease`. Never force
+10. Push the rebased app branches and `custom-apps` with `--force-with-lease` when
+   their published history was rewritten. Never force
    push `xteink`, and never push to `upstream`.
-10. Report the upstream version or commit, any conflicts or adaptations made,
+11. Report the upstream version or commit, any conflicts or adaptations made,
     firmware build result, checksum, and installer publication result.
 
 ## Safety boundaries
@@ -64,6 +95,10 @@ git fetch upstream
 git switch xteink
 git merge --ff-only upstream/xteink
 git push origin xteink
+
+git switch app-transit
+git rebase xteink
+git push --force-with-lease origin app-transit
 
 git switch custom-apps
 git rebase xteink
