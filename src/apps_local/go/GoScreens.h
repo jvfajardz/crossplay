@@ -91,6 +91,9 @@ struct BoardModel {
   // No legal move that is not filling your own eye: passing is the only sane
   // act and the board should say so.
   bool nothingLeft = false;
+  // The machine refused the count and the game came back. Without a word on the
+  // screen, a board reappearing on its own reads as a fault.
+  bool disagreed = false;
   const char* opponentName = nullptr;
   // Two people sharing one device, so "YOUR MOVE" is the wrong words.
   bool sharedDevice = false;

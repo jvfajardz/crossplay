@@ -179,6 +179,8 @@ void miniBoard(toybox::Screen& screen, const int16_t left, const int16_t top, co
 }
 
 const char* statusWords(const BoardModel& model) {
+  // First, because it is the answer to "why am I back on the board".
+  if (model.disagreed) return "IT DISAGREES. KEEP PLAYING.";
   if (model.thinking) return "THINKING";
   if (model.nothingLeft) return model.yourTurn ? "NOTHING LEFT: PASS" : "THEIR MOVE";
   if (model.caution == go::Caution::FillsOwnEye) return "THAT FILLS YOUR OWN EYE";
@@ -539,7 +541,7 @@ void buildBoard(toybox::Screen& screen, const BoardModel& model) {
            model.game.capturedBy[youAreBlack ? go::kBlack : go::kWhite]);
 
   // The caution still needs somewhere to speak, and the seat bands are not it.
-  if (model.caution != go::Caution::None || model.theyPassed || model.thinking) {
+  if (model.caution != go::Caution::None || model.theyPassed || model.thinking || model.disagreed) {
     fui::TextStyle note;
     note.font = toybox::kTileFont;
     note.align = fui::TextAlign::Center;

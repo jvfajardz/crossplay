@@ -126,6 +126,24 @@ constexpr Level nextLevel(const Level level) {
   return Level::Medium;
 }
 
+// Whether tapping ACCEPT ends the game, given who is sitting opposite.
+//
+// Against the MACHINE it ends only if the machine agrees with the marking. This
+// is the standard stone-removal flow every Go program uses: both sides mark,
+// both sides accept, and a disagreement resumes play so the board settles it
+// rather than the louder party. Before this, one tap recorded agreement for
+// both colours, so the count was whatever the player said it was and a game
+// could be won or lost to order.
+//
+// Two people sharing one device settle it between themselves: they are sitting
+// together looking at the same screen, and neither can cheat the other.
+//
+// A nearby match is not this function's business -- there, both seats accept in
+// their own time and `Game::accepted` carries it across the wire.
+constexpr bool acceptEndsTheGame(const Opponent opponent, const bool machineAgrees) {
+  return opponent == Opponent::Human || machineAgrees;
+}
+
 // What happens if this point is tapped, given what is already aimed at. One
 // function so that touch and any other route cannot disagree, and so the
 // screen can draw the aim from the same answer the activity acts on.

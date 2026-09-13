@@ -276,6 +276,7 @@ void GoActivity::beginSoloGame() {
   resultRecorded = false;
   inProgress = true;
   thinking = false;
+  disagreed = false;
   clearAim();
   writeSave();
   goTo(go::Screen::Board);
@@ -358,6 +359,7 @@ void GoActivity::handlePointActivated(const int point) {
 
   if (!go::play(game, point)) return;
   clearAim();
+  disagreed = false;
   if (inMatch()) {
     play.play(game);
   } else {
@@ -385,8 +387,25 @@ void GoActivity::refreshCount() {
   whiteHalves = counted.whiteHalves;
 }
 
+void GoActivity::resumeFromDisagreement() {
+  game.stage = static_cast<uint8_t>(go::Stage::Playing);
+  game.passes = 0;
+  go::clearMask(game.dead);
+  go::withdrawAcceptance(game);
+  // Said on the board rather than in a dialog: the player needs to know why the
+  // game came back, and the answer is one line on the screen they returned to.
+  disagreed = true;
+  thinking = false;
+  clearAim();
+  writeSave();
+  goTo(go::Screen::Board);
+}
+
 void GoActivity::enterCounting() {
-  goengine::estimateDead(game, seed, game.dead);
+  // The machine's own reading, offered as the starting point. The players may
+  // change it; against the machine, changing it is a disagreement and has to be
+  // settled on the board rather than by assertion. See ActionAccept.
+  goengine::opinionOnDead(game, game.dead);
   refreshCount();
   clearAim();
   if (!inMatch()) writeSave();
@@ -762,9 +781,19 @@ void GoActivity::gameLoop() {
       // sitting together and can say so out loud, so one tap settles it there
       // too; only a match has a second seat that has to agree in its own time.
       if (!inMatch()) {
-        go::accept(game, go::kBlack);
-        go::accept(game, go::kWhite);
-        finishCounting();
+        // The rule itself is in GoFlow.h, where the suite can reach it.
+        uint8_t opinion[go::kMaskBytes];
+        goengine::opinionOnDead(game, opinion);
+        if (go::acceptEndsTheGame(opponent, go::sameMask(opinion, game.dead))) {
+          go::accept(game, go::kBlack);
+          go::accept(game, go::kWhite);
+          finishCounting();
+          return;
+        }
+        // It disagrees, so the BOARD settles it. That is what the rules say to
+        // do about a disagreement over which stones are dead, and it is why
+        // there is no way to talk the machine round: you prove it instead.
+        resumeFromDisagreement();
         return;
       }
       const bool both = go::accept(game, seat);
@@ -862,6 +891,7 @@ void GoActivity::gameRender() {
       model.yourTurn = myMove();
       model.theyPassed = game.lastMove == go::kPass;
       model.nothingLeft = !go::hasUsefulMove(game, game.toMove);
+      model.disagreed = disagreed;
       player::shortName(inMatch() ? opponentName() : nullptr, theirName, sizeof(theirName));
       model.opponentName = inMatch() ? theirName : nullptr;
       model.sharedDevice = !inMatch() && opponent == go::Opponent::Human;
