@@ -548,7 +548,12 @@ void buildBoard(toybox::Screen& screen, const BoardModel& model) {
     note.align = fui::TextAlign::Center;
     // The one line that carries a number. Kept to the width of the longest
     // fixed message already here, because this row never wraps.
-    char played[32];
+    //
+    // Sized for what the FORMAT can print, not for what this caller passes.
+    // freePoints is a byte and can never exceed three digits, but %u admits ten
+    // and the buffer is the format's to fill: 22 fixed characters, ten digits
+    // and the terminator.
+    char played[40];
     const char* words = statusWords(model);
     if (explainPlayedOn) {
       std::snprintf(played, sizeof(played), "NOT OVER: %u FREE POINTS", static_cast<unsigned>(model.freePoints));
