@@ -541,7 +541,8 @@ void buildBoard(toybox::Screen& screen, const BoardModel& model) {
            model.game.capturedBy[youAreBlack ? go::kBlack : go::kWhite]);
 
   // The caution still needs somewhere to speak, and the seat bands are not it.
-  const bool explainPlayedOn = model.itPlayedOn && model.freePoints > 0;
+  const bool explainPlayedOn =
+      go::explainsPlayedOn(model.itPlayedOn, model.freePoints, model.disagreed, model.thinking, model.caution);
   if (explainPlayedOn || model.caution != go::Caution::None || model.theyPassed || model.thinking || model.disagreed) {
     fui::TextStyle note;
     note.font = toybox::kTileFont;

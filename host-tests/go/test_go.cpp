@@ -1156,6 +1156,32 @@ void testAHandicapIsStonesOnTheBoardAndWhiteToPlay() {
 // only worth anything if its number is the engine's number, which is why there
 // is one freePoints() and both read it. A screen saying two points are left
 // beside an opponent that plays nine more is worse than no screen at all.
+// The explanation speaks only when nothing more urgent needs the row.
+//
+// The board has ONE line to speak on. The line that says a pass was played
+// through has to yield to the three that answer a more pressing question, and
+// the `thinking` case is the one that actually bites: the flag is still set from
+// the previous pass while the next search runs, so without that term the
+// explanation replaces THINKING from the second pass onward and the machine
+// looks frozen.
+void testTheExplanationYieldsToAnythingMoreUrgent() {
+  const go::Caution none = go::Caution::None;
+  // The case it exists for: your pass was answered with a stone, points remain.
+  CHECK(go::explainsPlayedOn(true, 43, false, false, none));
+
+  // Silent when there was no pass to explain, or nothing left to take. A "0
+  // FREE POINTS" line would be worse than saying nothing.
+  CHECK(!go::explainsPlayedOn(false, 43, false, false, none));
+  CHECK(!go::explainsPlayedOn(true, 0, false, false, none));
+
+  // Yields to all three, each on its own so a missing term cannot hide behind
+  // another.
+  CHECK(!go::explainsPlayedOn(true, 43, true, false, none));
+  CHECK(!go::explainsPlayedOn(true, 43, false, true, none));
+  CHECK(!go::explainsPlayedOn(true, 43, false, false, go::Caution::FillsOwnEye));
+  CHECK(!go::explainsPlayedOn(true, 43, false, false, go::Caution::SelfAtari));
+}
+
 void testTheBoardsFreePointCountIsTheOneTheEngineDecidesOn() {
   // A board with a wall down the middle: four points down the third column
   // reach both colours, so they belong to nobody and are worth taking.
@@ -1944,6 +1970,7 @@ int main() {
   testAHandicapIsStonesOnTheBoardAndWhiteToPlay();
   testItStopsWhenTheResultIsSettledAndNotBefore();
   testTheBoardsFreePointCountIsTheOneTheEngineDecidesOn();
+  testTheExplanationYieldsToAnythingMoreUrgent();
   testTheEngineIsToldAboutTheKo();
   testEasyIsWeakWithoutLookingBroken();
   testTheLargeBoardIsTheSameGameOnMorePoints();
