@@ -56,6 +56,8 @@ class GoActivity final : public linkplay::LinkActivity {
   void handlePointActivated(int point);
   void toggleDeadAt(int point);
   void enterCounting();
+  // The machine declined the count, so the board settles it.
+  void resumeFromDisagreement();
   // Recomputes owner/blackHalves/whiteHalves from the position as it stands.
   // Every door into the counting screen has to pass through this: a resumed
   // game reached it with the three of them still zero, so the board showed no
@@ -101,6 +103,11 @@ class GoActivity final : public linkplay::LinkActivity {
   // between two taps, and the reason a misplaced stone is recoverable.
   int aimed = go::kNothingAimed;
   go::Caution caution = go::Caution::None;
+
+  // The machine refused the count and play resumed. Shown on the board until
+  // the next stone goes down, because a game that reappears with no explanation
+  // reads as a bug.
+  bool disagreed = false;
 
   // The computer's move is started one loop pass AFTER the repaint that shows
   // the human's, so the panel says THINKING before the search begins rather

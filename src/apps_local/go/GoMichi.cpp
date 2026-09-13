@@ -45,24 +45,58 @@ Settings settingsFor(const go::Level level) {
 int chooseMove(const go::Game& game, const go::Level level, uint32_t& seed, const Clock clock) {
   (void)seed;
 
-  // When to PASS is decided here and not by the search, and that is the one
-  // piece of judgement this bridge keeps.
+  // When to pass. Measured against GNU Go 3.8 rather than reasoned about: it
+  // passes in every game, passes while LOSING in three games of eight, and once
+  // passed at move 34 with 47 of 81 points still empty. So the rule is not
+  // "stop when ahead" and not "fill the board first". It is: stop when nothing
+  // is worth playing.
   //
-  // michi will not pass while there is a point left to take, because under area
-  // scoring a neutral point is worth one and filling it is not a mistake. To a
-  // person it reads as the machine not knowing the game is over -- so this is
-  // the Leela Zero rule instead: pass when the opponent has passed AND passing
-  // wins the game as it stands with every stone alive.
+  // Under area scoring that has an exact meaning. A point already surrounded by
+  // one colour is counted for them whether or not a stone sits on it, so playing
+  // there gains nothing. A point belonging to nobody is worth one, so it is
+  // worth taking. Hence: once the opponent has passed, pass unless a point
+  // belonging to nobody is still playable.
   //
-  // Both halves are load-bearing. Without the first, White passes on move two:
-  // an almost empty board is all neutral, so Black has nothing, White has komi,
-  // and "passing wins" is true before a stone is played.
+  // What this replaces was the Leela Zero rule -- pass only if the opponent
+  // passed AND passing WINS -- which never stopped a game the machine was
+  // losing. Measured, its first pass was the LAST move of the game, after the
+  // board had been filled to within a dozen points. That is the "it goes on
+  // forever" a beginner meets.
   //
-  // michi's own answer to this is is_better_to_pass(), which is not called: it
-  // runs compute_all_status(), which faults on a nearly full board.
-  if (game.passes >= 1 && goengine::passingWins(game, game.toMove)) return go::kPass;
-  // Nothing left but one's own eyes. Filling them is how a won group dies, so
-  // passing is the only move, whoever is ahead.
+  // Note michi cannot make this call itself: expand() only offers PASS as a
+  // move when a position has two or fewer legal moves, so in a normal position
+  // it is not in the tree at all.
+  if (game.passes >= 1) {
+    // How many points still belong to nobody, and can they change the result?
+    //
+    // Instrumented on real games: when GNU Go passes there are typically four
+    // to eight of these left, and under AREA scoring each is worth one, so
+    // taking them is correct play rather than stubbornness. Leaving them is a
+    // territory-rules habit. That is why "is anything left" is the wrong test
+    // and cost forty moves a game -- it is right, and it is unbearable.
+    //
+    // The test that matters is whether they can change who wins. If the margin
+    // already exceeds what every remaining neutral point is worth, the result
+    // is settled and playing them out decides nothing.
+    uint8_t owner[go::kMaxPoints];
+    go::territory(game, owner);
+    int neutral = 0;
+    const int points = game.points();
+    for (int point = 0; point < points; ++point) {
+      if (game.at(point) != go::kEmpty) continue;
+      if (owner[point] != go::kEmpty) continue;
+      if (!go::legal(game, point, game.toMove)) continue;
+      ++neutral;
+    }
+    const go::Score counted = go::score(game);
+    const int marginHalves = counted.blackHalves - counted.whiteHalves;
+    const int margin = (marginHalves < 0 ? -marginHalves : marginHalves) / 2;
+    // Strictly greater: a margin equal to the points on the table can still be
+    // erased by them, so that one is played out.
+    if (margin > neutral) return go::kPass;
+  }
+  // And the rules fact underneath it: with no legal move that is not filling one
+  // of our own eyes, passing is the only move there is.
   if (!go::hasUsefulMove(game, game.toMove)) return go::kPass;
 
   const Settings settings = settingsFor(level);

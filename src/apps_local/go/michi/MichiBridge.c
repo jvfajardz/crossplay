@@ -142,25 +142,6 @@ static void adopt(int size, const uint8_t *board, int toMove, int komiHalves, in
     gGame->komi = board_komi(gPos);
 }
 
-// The best move that is NOT a pass, read off the tree the search just built.
-//
-// Passing is the APP's decision, not the engine's (see the note in
-// GoMichi.cpp), so when the search likes a pass this asks it for its next
-// choice instead. michi's own best_move() takes a list of nodes to skip, which
-// is exactly this question; without it a search that liked a pass at sixty
-// simulations would end a game the app was still winning.
-static Point best_non_pass(void)
-{
-    if (gTree == NULL || gTree->children == NULL) return PASS_MOVE;
-    TreeNode *except[2] = {NULL, NULL};
-    for (TreeNode **child = gTree->children ; *child != NULL ; child++) {
-        if ((*child)->move == PASS_MOVE) { except[0] = *child; break; }
-    }
-    TreeNode *best = best_move(gTree, except[0] != NULL ? except : NULL);
-    if (best == NULL) return PASS_MOVE;
-    return best->move;
-}
-
 int michi_bridge_genmove(int size, const uint8_t *board, int toMove, int komiHalves, int ko, int lastMove,
                          int moveNumber, int simulations, uint32_t budgetMs, uint32_t (*nowMs)(void))
 {
@@ -248,7 +229,6 @@ int michi_bridge_genmove(int size, const uint8_t *board, int toMove, int komiHal
     gLastMs = nowMs != NULL ? nowMs() - began : 0;
     gLastSimulations = nplayouts_real;
 
-    if (pt == PASS_MOVE || pt == RESIGN_MOVE) pt = best_non_pass();
     if (pt == PASS_MOVE || pt == RESIGN_MOVE) return -1;
     int row, col;
     if (!our_point(pt, size, &row, &col)) return -1;
