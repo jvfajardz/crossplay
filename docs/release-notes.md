@@ -21,6 +21,12 @@ Everything above the marker is written by hand.
 
 <!-- releases, newest first -->
 
+### 1.13.1
+
+- Go's opponent gets about a third more thinking done in the same time, so it plays better at every level.
+- Go stops when the game is decided, instead of playing on until the board is full.
+- Go's opponent now has to agree with the final count, so the result is the game's rather than yours.
+
 ### 1.13.0
 
 - Go. Nine by nine or thirteen by thirteen, against the device, someone next to you, or someone nearby.
