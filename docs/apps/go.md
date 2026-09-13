@@ -279,13 +279,26 @@ It used to slice the search into a growing series of small `tree_search` calls
 and read the clock between them, and that was a real defect rather than a
 stylistic one. **Both** of `tree_search`'s early stops compare the simulations
 done against the count *that call* was handed: a slice of eight is "twenty
-percent read" after two simulations and stops itself there. Emulating the
-device's clock on the host, the sliced version delivered 742-834 playouts a move
-at 13x13 Hard where the deadline version delivers 972-1065, and 281 against 314
-at 9x9 Medium. Against GNU Go it was worth about seven points; head to head,
-under the device's clock, more. The old code had a comment saying the early
-stops became relative to the chunk and that this meant "it stops sooner, never
-wrong". Sooner was a third of the search.
+percent read" after two simulations and stops itself there. The old code carried
+a comment saying the early stops became relative to the chunk and that this
+meant "it stops sooner, never wrong". Sooner was a fifth of the search.
+
+Measured by running the engine against a clock scaled to a part twenty-six times
+slower than the laptop, which is the only condition where the budget binds at
+all. Six seeds a row, 13x13 Hard:
+
+| | sliced | deadline |
+| --- | --- | --- |
+| playouts a move | 766-830 | 885-1,065 |
+| worst single move | 2.7s | 3.1s |
+
+The worst move goes UP, because the search now spends the budget it was given.
+It stays inside the 4.0s budget and well inside the five second ceiling.
+
+**Head to head under that clock the deadline build wins 75-45** over 120 games,
+with GNU Go counting and playing neither side. Against GNU Go on the laptop's
+own clock, where the budget never binds and only the first slice can hurt, it is
+36% against 29%.
 
 What is NOT safe is reimplementing `genmove`'s preamble. An earlier version did,
 missed part of it, and produced a tree in which PASS won every playout and every
