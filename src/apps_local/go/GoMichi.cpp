@@ -22,19 +22,22 @@ Settings settingsFor(const go::Level level) {
   // are three SEPARATE settings and none of them is strength: a level that
   // silently spotted you stones made "easy" mean two things at once.
   //
-  // The counts are where michi-c2 was MEASURED, not guessed. The budgets are
-  // what those counts are expected to cost on this chip, which is roughly
-  // twenty-six times slower than the laptop they were measured on, and they
-  // exist because that multiplier is an estimate and the five second ceiling is
-  // not negotiable.
+  // The counts are where the engine was MEASURED, not guessed: 300 seeded
+  // games a level against GNU Go 3.8 at --level 1, nine by nine, area scoring,
+  // komi 7.5. See docs/apps/go.md for the ladder and for why an unseeded match
+  // of the same size measured nothing at all. The budgets are what those counts
+  // are expected to cost on this chip, which is roughly twenty-six times slower
+  // than the laptop they were measured on, and they exist because that
+  // multiplier is an estimate and the five second ceiling is not negotiable.
   switch (level) {
     case go::Level::Easy:
       return Settings{60, 1200};
     case go::Level::Medium:
-      // Roughly where michi-c2 measures LEVEL with GNU Go 3.8 at level 10.
+      // 36% against GNU Go 3.8 at --level 1, which is level with michi-c2's own
+      // build at this count.
       return Settings{500, 2500};
     case go::Level::Hard:
-      // And roughly where it measures 60% against that same opponent.
+      // 72% against that same opponent.
       return Settings{1500, 4000};
     case go::Level::Count_:
       break;
@@ -43,7 +46,13 @@ Settings settingsFor(const go::Level level) {
 }
 
 int chooseMove(const go::Game& game, const go::Level level, uint32_t& seed, const Clock clock) {
-  (void)seed;
+  // michi's generator is a global that starts at 1 and that nothing else here
+  // sets, so an unseeded engine answers a given position the same way forever:
+  // every game from a cold boot was the SAME game. The seed the caller keeps is
+  // michi's seed, advanced once a move by michi's own generator so the next move
+  // is a different draw and a given starting seed still replays exactly.
+  seed = seed * 1664525u + 1013904223u;
+  michi_bridge_seed(seed);
 
   // When to pass. Measured against GNU Go 3.8 rather than reasoned about: it
   // passes in every game, passes while LOSING in three games of eight, and once
