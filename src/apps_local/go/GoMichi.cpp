@@ -46,7 +46,13 @@ Settings settingsFor(const go::Level level) {
 }
 
 int chooseMove(const go::Game& game, const go::Level level, uint32_t& seed, const Clock clock) {
-  (void)seed;
+  // michi's generator is a global that starts at 1 and that nothing else here
+  // sets, so an unseeded engine answers a given position the same way forever:
+  // every game from a cold boot was the SAME game. The seed the caller keeps is
+  // michi's seed, advanced once a move by michi's own generator so the next move
+  // is a different draw and a given starting seed still replays exactly.
+  seed = seed * 1664525u + 1013904223u;
+  michi_bridge_seed(seed);
 
   // When to pass. Measured against GNU Go 3.8 rather than reasoned about: it
   // passes in every game, passes while LOSING in three games of eight, and once

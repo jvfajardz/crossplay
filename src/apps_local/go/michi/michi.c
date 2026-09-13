@@ -117,10 +117,10 @@ static int ladder_depth;
 //
 // michi_now_ms is NULL off the device and in the host suite, where there is no
 // clock and the count is the bound.
-static unsigned int (*michi_now_ms)(void);
-static unsigned int michi_began_ms, michi_budget_ms;
+static uint32_t (*michi_now_ms)(void);
+static uint32_t michi_began_ms, michi_budget_ms;
 
-void michi_set_deadline(unsigned int (*now)(void), unsigned int began, unsigned int budget)
+void michi_set_deadline(uint32_t (*now)(void), uint32_t began, uint32_t budget)
 {
     michi_now_ms = now;
     michi_began_ms = began;
@@ -131,7 +131,7 @@ void michi_set_deadline(unsigned int (*now)(void), unsigned int began, unsigned 
 static int michi_out_of_time(void)
 {
     if (michi_now_ms == NULL) return 0;
-    return (unsigned int)(michi_now_ms() - michi_began_ms) >= michi_budget_ms;
+    return (uint32_t)(michi_now_ms() - michi_began_ms) >= michi_budget_ms;
 }
 
 // expand()'s scratch position. Allocated once, beside the ladder stack and for

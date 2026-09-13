@@ -142,6 +142,12 @@ static void adopt(int size, const uint8_t *board, int toMove, int komiHalves, in
     gGame->komi = board_komi(gPos);
 }
 
+void michi_bridge_seed(uint32_t seed)
+{
+    michi_bridge_init();   // zobrist setup saves and restores idum, so seed after it
+    idum = (unsigned int)seed;
+}
+
 int michi_bridge_genmove(int size, const uint8_t *board, int toMove, int komiHalves, int ko, int lastMove,
                          int moveNumber, int simulations, uint32_t budgetMs, uint32_t (*nowMs)(void))
 {

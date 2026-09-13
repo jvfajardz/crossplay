@@ -898,13 +898,6 @@ void testTheOpponentBeatsARandomMoverAtEveryLevel() {
   }
 }
 
-// michi's own generator. Two searches of one position are only comparable when
-// they start from the same seed: every search advances it, so "run it twice and
-// compare" silently compares two different experiments otherwise.
-extern "C" {
-extern unsigned int idum;
-}
-
 // A clock the test controls, so "it stopped when it was told" is a fact rather
 // than a stopwatch reading.
 uint32_t gFakeMs = 0;
@@ -936,6 +929,49 @@ uint32_t fakeClock() {
 // The clock is inside the search's own loop now, so a clock that never fires is
 // a clock that does nothing, and that is exactly what this asserts. It fails on
 // the sliced version, whose answer depends on whether a clock was lent at all.
+// Two boots, two different games -- and the same seed replays exactly.
+//
+// michi's generator is a global that starts at 1, and nothing in the engine set
+// it. `GoActivity::onEnter` gathered entropy from `millis()` into a seed and
+// passed it to `chooseMove`, which discarded it: `(void)seed`. So the answer to
+// a given position was fixed for the life of the build, and the first game after
+// every power-on was the same first game. The comment in onEnter said the seed
+// "has to differ between boots or the computer plays the same game every time",
+// which was true and was not happening.
+//
+// Both halves matter. Different is what a player notices; identical-from-the-
+// same-seed is what makes every other test in this file mean anything.
+void testADifferentSeedPlaysADifferentGameAndTheSameSeedReplays() {
+  const int kOpening = 6;
+
+  auto openingFrom = [&](uint32_t start, int* out) {
+    Game game;
+    reset(game, kSize, 0, komiForHandicap(0));
+    uint32_t seed = start;
+    for (int m = 0; m < kOpening; ++m) {
+      out[m] = gomichi::chooseMove(game, go::Level::Medium, seed);
+      CHECK(out[m] == kPass || legal(game, out[m], game.toMove));
+      CHECK(play(game, out[m]));
+    }
+  };
+
+  int a[kOpening], b[kOpening], again[kOpening];
+  openingFrom(0x9E3779B9u, a);
+  openingFrom(0x9E3779B9u ^ (1234u * 2654435761u), b);
+  openingFrom(0x9E3779B9u, again);
+
+  // Replay: every move, in order.
+  for (int m = 0; m < kOpening; ++m) CHECK(a[m] == again[m]);
+
+  // Divergence: somewhere in six moves. Not move by move -- two openings may
+  // legitimately share a first move -- but they must not be the same opening.
+  bool differs = false;
+  for (int m = 0; m < kOpening; ++m) {
+    if (a[m] != b[m]) differs = true;
+  }
+  CHECK(differs);
+}
+
 void testAClockThatNeverRunsOutChangesNothing() {
   Game game;
   reset(game);
@@ -944,21 +980,24 @@ void testAClockThatNeverRunsOutChangesNothing() {
 
   for (int i = 0; i < 3; ++i) {
     const go::Level level = static_cast<go::Level>(i);
-    uint32_t seed = 31337u + static_cast<uint32_t>(i);
+    const uint32_t start = 31337u + static_cast<uint32_t>(i);
 
+    // The SAME starting seed both times. chooseMove advances it once a move, so
+    // reusing the variable would compare two different draws and this test would
+    // be asserting that two unrelated searches agree.
+    uint32_t seed = start;
     gFakeMs = 0;
     gFakeReadings = 0;
-    idum = 777u;
     const int withoutClock = gomichi::chooseMove(game, level, seed);
     const int simsWithout = gomichi::lastSimulations();
     CHECK(gFakeReadings == 0);
 
     // Frozen: every reading is the same millisecond, so the budget can never be
     // reached however many simulations run.
+    seed = start;
     gFakeMs = 0;
     gFakeReadings = 0;
     gFakeStep = 0;
-    idum = 777u;
     const int withClock = gomichi::chooseMove(game, level, seed, fakeClock);
     CHECK(gFakeReadings > 0);
     CHECK(withClock == withoutClock);
@@ -995,11 +1034,15 @@ void testTheClockStopsTheSearchWhateverTheSimulationCountSays() {
     // this clock. The comparison is what makes the assertion able to fail --
     // "fewer than the count" is also true of a search michi stopped early by
     // itself, and that is what the first version of this test was measuring.
-    uint32_t seed = 9090u + static_cast<uint32_t>(i);
+    const uint32_t start = 9090u + static_cast<uint32_t>(i);
+    uint32_t seed = start;
     const int unhurried = gomichi::chooseMove(game, level, seed);
     const int unhurriedSims = gomichi::lastSimulations();
     CHECK(unhurried == kPass || legal(game, unhurried, game.toMove));
 
+    // Same starting seed, so the only difference between the two searches is
+    // the clock.
+    seed = start;
     gFakeMs = 0;
     gFakeReadings = 0;
     gFakeStep = settings.budgetMs / 2 + 1;
@@ -1249,11 +1292,21 @@ void testEasyIsWeakWithoutLookingBroken() {
       const uint8_t mover = game.toMove;
       const int move = gomichi::chooseMove(game, go::Level::Easy, seed);
       if (move == kPass) {
-        // Passing is allowed when the opponent passed and it wins, and when
-        // there is nothing left to play. Those are the only two, and the search
-        // does not get a vote: michi liking a pass at sixty simulations would
-        // otherwise end a game this level was winning.
-        CHECK((game.passes >= 1 && goengine::passingWins(game, mover)) || !go::hasUsefulMove(game, mover));
+        // The search does not get a vote on passing: michi liking a pass at
+        // sixty simulations would otherwise end a game this level was winning.
+        // So either the opponent has already passed, or there is nothing left
+        // to play -- and a pass with neither true is the fault this is looking
+        // for.
+        //
+        // This assertion used to name `goengine::passingWins`, the Leela Zero
+        // rule, which the app stopped using when it started stopping at a
+        // settled result instead. It kept passing only because these three
+        // seeded games never reached the branch; changing the seed made it fail
+        // at once. Whether a settled position is settled ENOUGH is
+        // testItStopsWhenTheResultIsSettledAndNotBefore's job, on positions
+        // built for it, and repeating that arithmetic here would only assert
+        // that the rule equals itself.
+        CHECK(game.passes >= 1 || !go::hasUsefulMove(game, mover));
       } else {
         CHECK(legal(game, move, mover));
       }
@@ -1799,6 +1852,7 @@ int main() {
 
   // Last, deliberately: it seeds michi's generator, and every test after it
   // would draw from a different stream than the one it was written against.
+  testADifferentSeedPlaysADifferentGameAndTheSameSeedReplays();
   testAClockThatNeverRunsOutChangesNothing();
 
   std::printf("%d checks, %d failed\n", checks, failures);
