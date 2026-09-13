@@ -21,6 +21,10 @@ Everything above the marker is written by hand.
 
 <!-- releases, newest first -->
 
+### 1.13.2
+
+- Go says why your pass did not end the game, and how many points are still open.
+
 ### 1.13.1
 
 - Go's opponent gets about a third more thinking done in the same time, so it plays better at every level.
