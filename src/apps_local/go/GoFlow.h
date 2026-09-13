@@ -193,4 +193,30 @@ inline bool hasUsefulMove(const Game& game, const uint8_t colour) {
   return false;
 }
 
+// How many empty points still belong to NOBODY and can be played.
+//
+// Under area scoring this is the whole of "is there anything left worth
+// playing": a point already surrounded by one colour counts for them whether or
+// not a stone sits on it, so taking it gains nothing, while a point belonging to
+// nobody is worth one to whoever takes it.
+//
+// It is one function because two things need the same answer and must never
+// give different ones. The engine passes only when its lead exceeds this count,
+// and the board tells the player this many points are still free when their own
+// pass did not end the game. A screen saying "nothing left" beside an opponent
+// that keeps playing is the fault this exists to prevent.
+inline int freePoints(const Game& game, const uint8_t colour) {
+  uint8_t owner[kMaxPoints];
+  territory(game, owner);
+  int free = 0;
+  const int points = game.points();
+  for (int point = 0; point < points; ++point) {
+    if (game.at(point) != kEmpty) continue;
+    if (owner[point] != kEmpty) continue;
+    if (!legal(game, point, colour)) continue;
+    ++free;
+  }
+  return free;
+}
+
 }  // namespace go

@@ -277,6 +277,7 @@ void GoActivity::beginSoloGame() {
   inProgress = true;
   thinking = false;
   disagreed = false;
+  passWasPlayedThrough = false;
   clearAim();
   writeSave();
   goTo(go::Screen::Board);
@@ -319,6 +320,8 @@ void GoActivity::takeComputerTurn() {
           static_cast<unsigned>(game.size), static_cast<unsigned>(game.size), static_cast<unsigned>(took),
           static_cast<unsigned>(settings.budgetMs), gomichi::lastSimulations(),
           static_cast<unsigned>(settings.simulations), static_cast<unsigned>(game.moveNumber));
+  // Before the move lands, because playing it resets the pass count.
+  passWasPlayedThrough = game.passes >= 1 && move != go::kPass;
   if (!go::play(game, move)) {
     // Belt and braces: chooseMove promises a legal move, and if it ever breaks
     // that promise the game passes rather than freezing on a turn nobody can
@@ -360,6 +363,7 @@ void GoActivity::handlePointActivated(const int point) {
   if (!go::play(game, point)) return;
   clearAim();
   disagreed = false;
+  passWasPlayedThrough = false;
   if (inMatch()) {
     play.play(game);
   } else {
@@ -892,6 +896,8 @@ void GoActivity::gameRender() {
       model.theyPassed = game.lastMove == go::kPass;
       model.nothingLeft = !go::hasUsefulMove(game, game.toMove);
       model.disagreed = disagreed;
+      model.itPlayedOn = passWasPlayedThrough && opponent == go::Opponent::Computer;
+      model.freePoints = static_cast<uint8_t>(go::freePoints(game, game.toMove));
       player::shortName(inMatch() ? opponentName() : nullptr, theirName, sizeof(theirName));
       model.opponentName = inMatch() ? theirName : nullptr;
       model.sharedDevice = !inMatch() && opponent == go::Opponent::Human;

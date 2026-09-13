@@ -1144,6 +1144,105 @@ void testAHandicapIsStonesOnTheBoardAndWhiteToPlay() {
   CHECK(withStones.blackHalves - withStones.whiteHalves > without.blackHalves - without.whiteHalves);
 }
 
+// The number on the board is the number the engine passes on.
+//
+// Mario, on hardware, after v1.13.1: "I still see the opponent never passes."
+// Measured, he was right about what he saw and the machine was right to do it:
+// when a player passes with points still belonging to nobody, the machine takes
+// them, one a turn, and 86% of those moves are worth a point each. Agreeing
+// instead was tried and costs it the game -- 40 wins in 40 became 16 in 40.
+//
+// So the machine keeps playing and the BOARD explains why. That explanation is
+// only worth anything if its number is the engine's number, which is why there
+// is one freePoints() and both read it. A screen saying two points are left
+// beside an opponent that plays nine more is worse than no screen at all.
+void testTheBoardsFreePointCountIsTheOneTheEngineDecidesOn() {
+  // A board with a wall down the middle: four points down the third column
+  // reach both colours, so they belong to nobody and are worth taking.
+  Game game;
+  const char* rows[kSize] = {
+      "XX.OOOOOO",  //
+      "XX.OOOOOO",  //
+      "XX.OOOOOO",  //
+      "XX.OOOOOO",  //
+      "XXXOOOOOO",  //
+      "XXXOOOOOO",  //
+      "XXXOOOOOO",  //
+      "XXXOOOOOO",  //
+      "XXXOOOOOO",  //
+  };
+  setUp(game, rows, kBlack);
+  const int free = go::freePoints(game, kBlack);
+  CHECK(free == 4);
+  CHECK(go::freePoints(game, kWhite) == 4);
+
+  // Every one of them is empty, playable, and owned by nobody: the three
+  // conditions the count is made of, checked separately so a count that is
+  // right by accident cannot pass.
+  uint8_t owner[go::kMaxPoints];
+  go::territory(game, owner);
+  int checked = 0;
+  for (int point = 0; point < game.points(); ++point) {
+    if (game.at(point) != kEmpty || owner[point] != kEmpty) continue;
+    CHECK(legal(game, point, kBlack));
+    ++checked;
+  }
+  CHECK(checked == free);
+
+  // Filling one leaves one fewer, which is what makes the number on the board
+  // count down as the machine takes them.
+  CHECK(play(game, pointAt(0, 2)));
+  CHECK(go::freePoints(game, kWhite) == 3);
+
+  // A point inside somebody's territory is NOT free: taking it gains nothing
+  // under area scoring, and counting it would have the board promising points
+  // that are not there.
+  Game closed;
+  const char* walled[kSize] = {
+      "XXXXXXXXX",  //
+      "X.......X",  //
+      "XXXXXXXXX",  //
+      "OOOOOOOOO",  //
+      "O.......O",  //
+      "OOOOOOOOO",  //
+      "XXXXXXXXX",  //
+      "OOOOOOOOO",  //
+      "OOOOOOOOO",  //
+  };
+  setUp(closed, walled, kBlack);
+  CHECK(go::freePoints(closed, kBlack) == 0);
+
+  // And a point nobody owns that one colour may NOT play. Without this case the
+  // legality test in freePoints() is not exercised at all: on every board above,
+  // every unowned point is playable by both, so deleting that line leaves all
+  // the counts right and the suite green.
+  //
+  // A ko point does not do it -- the capture leaves it ringed by one colour, so
+  // it belongs to that colour and is not free. This one is a corner point
+  // wedged between the two: Black there is suicide, because the black stone it
+  // would join has no other liberty and nothing is captured; White there is a
+  // capture, so it is legal.
+  Game wedge;
+  const char* wedged[kSize] = {
+      ".XO......",  //
+      "OO.......",  //
+      ".........",  //
+      ".........",  //
+      ".........",  //
+      ".........",  //
+      ".........",  //
+      ".........",  //
+      ".........",  //
+  };
+  setUp(wedge, wedged, kBlack);
+  uint8_t wedgeOwner[go::kMaxPoints];
+  go::territory(wedge, wedgeOwner);
+  CHECK(wedgeOwner[pointAt(0, 0)] == kEmpty);   // nobody's: it touches both
+  CHECK(!legal(wedge, pointAt(0, 0), kBlack));  // suicide
+  CHECK(legal(wedge, pointAt(0, 0), kWhite));   // captures, so legal
+  CHECK(go::freePoints(wedge, kBlack) == go::freePoints(wedge, kWhite) - 1);
+}
+
 void testItStopsWhenTheResultIsSettledAndNotBefore() {
   // The Leela Zero rule, and the loudest way a Go program can look broken.
   //
@@ -1844,6 +1943,7 @@ int main() {
   testEveryLevelIsADifferentPlayer();
   testAHandicapIsStonesOnTheBoardAndWhiteToPlay();
   testItStopsWhenTheResultIsSettledAndNotBefore();
+  testTheBoardsFreePointCountIsTheOneTheEngineDecidesOn();
   testTheEngineIsToldAboutTheKo();
   testEasyIsWeakWithoutLookingBroken();
   testTheLargeBoardIsTheSameGameOnMorePoints();

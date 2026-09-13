@@ -541,14 +541,23 @@ void buildBoard(toybox::Screen& screen, const BoardModel& model) {
            model.game.capturedBy[youAreBlack ? go::kBlack : go::kWhite]);
 
   // The caution still needs somewhere to speak, and the seat bands are not it.
-  if (model.caution != go::Caution::None || model.theyPassed || model.thinking || model.disagreed) {
+  const bool explainPlayedOn = model.itPlayedOn && model.freePoints > 0;
+  if (explainPlayedOn || model.caution != go::Caution::None || model.theyPassed || model.thinking || model.disagreed) {
     fui::TextStyle note;
     note.font = toybox::kTileFont;
     note.align = fui::TextAlign::Center;
+    // The one line that carries a number. Kept to the width of the longest
+    // fixed message already here, because this row never wraps.
+    char played[32];
+    const char* words = statusWords(model);
+    if (explainPlayedOn) {
+      std::snprintf(played, sizeof(played), "NOT OVER: %u FREE POINTS", static_cast<unsigned>(model.freePoints));
+      words = played;
+    }
     screen.target().text(
         toybox::inkCentred(fui::makeRect(boardLeft(device), static_cast<int16_t>(bottom.y - 30), kBoardSide, 26),
                            toybox::kTileCut),
-        statusWords(model), note);
+        words, note);
   }
 }
 
