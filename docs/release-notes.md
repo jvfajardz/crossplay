@@ -24,7 +24,7 @@ Everything above the marker is written by hand.
 ### 1.13.0
 
 - Go. Nine by nine or thirteen by thirteen, against the device, someone next to you, or someone nearby.
-- Its opponent is michi-c2, which on MEDIUM plays level with GNU Go 3.8 at full strength.
+- Its opponent is michi-c2, at three strengths.
 - A move takes at most 1.2, 2.5 or 4 seconds, by the level you picked.
 - The level is how hard it thinks. Handicap, colour and board are yours to set separately.
 - The front door draws the game you are in, and RESUME has a bin on the end of it.

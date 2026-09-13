@@ -898,6 +898,13 @@ void testTheOpponentBeatsARandomMoverAtEveryLevel() {
   }
 }
 
+// michi's own generator. Two searches of one position are only comparable when
+// they start from the same seed: every search advances it, so "run it twice and
+// compare" silently compares two different experiments otherwise.
+extern "C" {
+extern unsigned int idum;
+}
+
 // A clock the test controls, so "it stopped when it was told" is a fact rather
 // than a stopwatch reading.
 uint32_t gFakeMs = 0;
@@ -905,13 +912,59 @@ uint32_t gFakeReadings = 0;
 uint32_t gFakeStep = 400;
 uint32_t fakeClock() {
   // The step is set to just over half the level's budget, so the budget
-  // genuinely runs out on the second chunk. A one millisecond step does not:
+  // genuinely runs out early in the search. A one millisecond step does not:
   // the search finishes its whole simulation count in three or four readings
   // and the branch this test exists to exercise is never taken -- the test
-  // then passes with the budget check deleted.
+  // then passes with the budget check deleted. A step of zero freezes the
+  // clock, which is the case the test below this one needs.
   ++gFakeReadings;
   gFakeMs += gFakeStep;
   return gFakeMs;
+}
+
+// A clock that never runs out must change NOTHING about the search.
+//
+// It did. The budget used to be applied by slicing the search into a series of
+// small tree_search() calls and reading the clock between them, and the size of
+// those slices was computed from the clock -- so lending a clock changed the
+// work done even when the budget was never reached. It was worse than that:
+// BOTH of tree_search's early stops compare the simulations done against the
+// count IT was handed, so a slice of eight is "twenty percent read" after two
+// simulations and stops itself there. The search asked for five hundred played
+// about a hundred.
+//
+// The clock is inside the search's own loop now, so a clock that never fires is
+// a clock that does nothing, and that is exactly what this asserts. It fails on
+// the sliced version, whose answer depends on whether a clock was lent at all.
+void testAClockThatNeverRunsOutChangesNothing() {
+  Game game;
+  reset(game);
+  CHECK(play(game, pointAt(4, 4)));
+  CHECK(play(game, pointAt(2, 6)));
+
+  for (int i = 0; i < 3; ++i) {
+    const go::Level level = static_cast<go::Level>(i);
+    uint32_t seed = 31337u + static_cast<uint32_t>(i);
+
+    gFakeMs = 0;
+    gFakeReadings = 0;
+    idum = 777u;
+    const int withoutClock = gomichi::chooseMove(game, level, seed);
+    const int simsWithout = gomichi::lastSimulations();
+    CHECK(gFakeReadings == 0);
+
+    // Frozen: every reading is the same millisecond, so the budget can never be
+    // reached however many simulations run.
+    gFakeMs = 0;
+    gFakeReadings = 0;
+    gFakeStep = 0;
+    idum = 777u;
+    const int withClock = gomichi::chooseMove(game, level, seed, fakeClock);
+    CHECK(gFakeReadings > 0);
+    CHECK(withClock == withoutClock);
+    CHECK(gomichi::lastSimulations() == simsWithout);
+  }
+  gFakeStep = 400;
 }
 
 void testTheClockStopsTheSearchWhateverTheSimulationCountSays() {
@@ -920,8 +973,8 @@ void testTheClockStopsTheSearchWhateverTheSimulationCountSays() {
   // property of the machine. Mario played the first build on hardware and said
   // every level was too slow.
   //
-  // So the search runs in chunks against a clock the caller lends, and this
-  // proves the clock is actually consulted: with a clock that advances a
+  // So the search reads a clock the caller lends, and this proves the clock is
+  // actually consulted: with a clock that advances a
   // millisecond per reading, the budget runs out within a few readings and the
   // search must come back having run FAR fewer simulations than its count
   // allows -- and still come back with a legal move.
@@ -1744,6 +1797,11 @@ int main() {
   testResetClearsTheTailOfTheLargerBoard();
   testTheOpponentBeatsARandomMoverAtEveryLevel();
 
+  // Last, deliberately: it seeds michi's generator, and every test after it
+  // would draw from a different stream than the one it was written against.
+  testAClockThatNeverRunsOutChangesNothing();
+
   std::printf("%d checks, %d failed\n", checks, failures);
+
   return failures == 0 ? 0 : 1;
 }

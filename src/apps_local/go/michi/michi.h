@@ -123,6 +123,8 @@ void   make_pat3set(void);
 // static -- 500 of them is 2.8MB of .bss, which does not fit this chip's DRAM
 // segment at all. See michi.c.
 void   michi_stack_alloc(int depth);
+// FORK CHANGE: the search's wall clock. See michi.c; `now` NULL disables it.
+void   michi_set_deadline(unsigned int (*now)(void), unsigned int began, unsigned int budget);
 Position* michi_expand_scratch(void);
 void   michi_stack_free(void);
 char*  make_list_pat3_matching(Position *pos, Point pt);
