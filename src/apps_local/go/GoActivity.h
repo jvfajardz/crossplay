@@ -108,6 +108,10 @@ class GoActivity final : public linkplay::LinkActivity {
   // the next stone goes down, because a game that reappears with no explanation
   // reads as a bug.
   bool disagreed = false;
+  // You passed and the machine answered with a stone. Tracked because the board
+  // cannot tell: `game.passes` is back to zero by the time it is drawn, so a
+  // pass that was answered and a pass that was never made look identical.
+  bool passWasPlayedThrough = false;
 
   // The computer's move is started one loop pass AFTER the repaint that shows
   // the human's, so the panel says THINKING before the search begins rather

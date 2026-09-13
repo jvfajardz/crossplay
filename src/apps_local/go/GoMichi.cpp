@@ -87,16 +87,7 @@ int chooseMove(const go::Game& game, const go::Level level, uint32_t& seed, cons
     // The test that matters is whether they can change who wins. If the margin
     // already exceeds what every remaining neutral point is worth, the result
     // is settled and playing them out decides nothing.
-    uint8_t owner[go::kMaxPoints];
-    go::territory(game, owner);
-    int neutral = 0;
-    const int points = game.points();
-    for (int point = 0; point < points; ++point) {
-      if (game.at(point) != go::kEmpty) continue;
-      if (owner[point] != go::kEmpty) continue;
-      if (!go::legal(game, point, game.toMove)) continue;
-      ++neutral;
-    }
+    const int neutral = go::freePoints(game, game.toMove);
     const go::Score counted = go::score(game);
     const int marginHalves = counted.blackHalves - counted.whiteHalves;
     const int margin = (marginHalves < 0 ? -marginHalves : marginHalves) / 2;

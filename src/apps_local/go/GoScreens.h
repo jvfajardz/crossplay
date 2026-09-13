@@ -98,6 +98,13 @@ struct BoardModel {
   // Two people sharing one device, so "YOUR MOVE" is the wrong words.
   bool sharedDevice = false;
   bool thinking = false;
+  // You passed and the machine answered with a STONE rather than a pass, which
+  // on a board that does not move reads as the machine ignoring you. It is not:
+  // there are points belonging to nobody and it is taking them, which is correct
+  // play and worth one point each. `freePoints` is how many are left, and it is
+  // the same number the engine's own pass rule reads.
+  bool itPlayedOn = false;
+  uint8_t freePoints = 0;
 };
 
 struct CountModel {
