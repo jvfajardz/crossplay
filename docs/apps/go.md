@@ -459,8 +459,11 @@ have failed. They are gone.
   not quote a number from fewer than about sixty games, and do not act on one.
 - **Both engines against a third is a blunt instrument for "is A better than
   B".** It answers "is either better than GNU Go". Play A against B directly,
-  with a GNU Go that played neither side as the counter; the same change read as
-  7 points one way and even the other.
+  with a GNU Go that played neither side as the counter. The deadline change
+  read three ways: 7 points through GNU Go, 55% head to head on the laptop's own
+  clock, and 62% head to head under the device's. Only the last is the condition
+  the device is in, and it is the only one of the three that is clear of its own
+  error bar.
 - **Homebrew's `gnugo` crashes on `genmove` at every level on arm64.** It
   answers `boardsize` and `clear_board` happily and then dies silently, so a
   match reports every game as an error rather than as a crash. GNU Go assumes a
