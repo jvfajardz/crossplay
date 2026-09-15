@@ -21,6 +21,10 @@ Everything above the marker is written by hand.
 
 <!-- releases, newest first -->
 
+### 1.13.3
+
+- Calculator: twenty keys, ten digits, and arithmetic that is actually decimal
+
 ### 1.13.2
 
 - Go says why your pass did not end the game, and how many points are still open.
