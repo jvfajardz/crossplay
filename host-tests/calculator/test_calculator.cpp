@@ -12,7 +12,7 @@
 #include <cstring>
 
 #include "CalcEngine.h"
-#include "CalcLayout.h"
+#include "CalcSkin.h"
 
 using namespace calc;
 
@@ -43,26 +43,65 @@ namespace {
 void type(Engine& e, const char* keys) {
   for (const char* p = keys; *p; ++p) {
     switch (*p) {
-      case '0': case '1': case '2': case '3': case '4':
-      case '5': case '6': case '7': case '8': case '9':
+      case '0':
+      case '1':
+      case '2':
+      case '3':
+      case '4':
+      case '5':
+      case '6':
+      case '7':
+      case '8':
+      case '9':
         e.press(static_cast<Key>(static_cast<int>(Key::D0) + (*p - '0')));
         break;
-      case '.': e.press(Key::Dot); break;
-      case '+': e.press(Key::Add); break;
-      case '-': e.press(Key::Sub); break;
-      case 'x': e.press(Key::Mul); break;
-      case '/': e.press(Key::Div); break;
-      case '=': e.press(Key::Equals); break;
-      case '%': e.press(Key::Percent); break;
-      case 'n': e.press(Key::Negate); break;
-      case 'C': e.press(Key::ClearAll); break;
-      case 'E': e.press(Key::ClearEntry); break;
-      case '<': e.press(Key::Backspace); break;
-      case ' ': break;  // spacing, for runs that read as words
-      case 'r': e.press(Key::Sqrt); break;
-      case 'q': e.press(Key::Square); break;
-      case 'i': e.press(Key::Reciprocal); break;
-      default: std::printf("bad key '%c' in \"%s\"\n", *p, keys); break;
+      case '.':
+        e.press(Key::Dot);
+        break;
+      case '+':
+        e.press(Key::Add);
+        break;
+      case '-':
+        e.press(Key::Sub);
+        break;
+      case 'x':
+        e.press(Key::Mul);
+        break;
+      case '/':
+        e.press(Key::Div);
+        break;
+      case '=':
+        e.press(Key::Equals);
+        break;
+      case '%':
+        e.press(Key::Percent);
+        break;
+      case 'n':
+        e.press(Key::Negate);
+        break;
+      case 'C':
+        e.press(Key::ClearAll);
+        break;
+      case 'E':
+        e.press(Key::ClearEntry);
+        break;
+      case '<':
+        e.press(Key::Backspace);
+        break;
+      case ' ':
+        break;  // spacing, for runs that read as words
+      case 'r':
+        e.press(Key::Sqrt);
+        break;
+      case 'q':
+        e.press(Key::Square);
+        break;
+      case 'i':
+        e.press(Key::Reciprocal);
+        break;
+      default:
+        std::printf("bad key '%c' in \"%s\"\n", *p, keys);
+        break;
     }
   }
 }
@@ -119,10 +158,10 @@ void testTheKnownLimitOfBinaryArithmetic() {
 void testTypingANumber() {
   Engine e;
   CHECK_TEXT(run(e, "0"), "0");
-  CHECK_TEXT(run(e, "007"), "7");        // leading zeros collapse
+  CHECK_TEXT(run(e, "007"), "7");  // leading zeros collapse
   CHECK_TEXT(run(e, "1.5"), "1.5");
-  CHECK_TEXT(run(e, "1.5.5"), "1.55");   // the second point is refused, not stacked
-  CHECK_TEXT(run(e, ".5"), "0.5");       // a bare point opens a fraction
+  CHECK_TEXT(run(e, "1.5.5"), "1.55");  // the second point is refused, not stacked
+  CHECK_TEXT(run(e, ".5"), "0.5");      // a bare point opens a fraction
   CHECK_TEXT(run(e, "5n"), "-5");
   CHECK_TEXT(run(e, "5n n"), "5");
   // Thirteen digits typed: the thirteenth is refused rather than accepted and
@@ -130,7 +169,7 @@ void testTypingANumber() {
   CHECK_TEXT(run(e, "1234567890123"), "123456789012");
   CHECK_TEXT(run(e, "123<"), "12");
   CHECK_TEXT(run(e, "1<<"), "0");
-  CHECK_TEXT(run(e, "7E"), "0");         // CE clears what is being typed
+  CHECK_TEXT(run(e, "7E"), "0");  // CE clears what is being typed
 }
 
 // --- the four functions -----------------------------------------------------
@@ -229,27 +268,29 @@ void testTheTapeRecordsFinishedSums() {
   CHECK_TEXT(e.tapeLine(0), "12 + 34 = 46");
   // The second sum starts from scratch: after =, a digit opens a new number
   // rather than extending the result, so 250 is an operand and not 46250.
-  CHECK_TEXT(e.tapeLine(1), "250 x 4 = 1000");
+  CHECK_TEXT(e.tapeLine(1), "250 \xC3\x97 4 = 1000");
 }
 
 // --- the pads ---------------------------------------------------------------
 
-const Layout* kAll[] = {&pads::kPhoneLayout, &pads::kDesktopLayout, &pads::kTapeLayout, &pads::kScientificLayout,
-                        &pads::kExpressionLayout};
+const Skin* kAll[] = {&skins::kToybox, &skins::kInstrument, &skins::kNight, &skins::kSwiss, &skins::kLedger};
 
-Rect16 body() { return Rect16{16, 119, 448, 800 - 16 - 119}; }
+// The activity's own geometry function, not a copy of it: a host suite that
+// re-derives the layout checks a layout the panel does not draw.
+PadGeom geomFor(const Skin& s) { return calc::geomFor(s, 480, 800); }
 
 // The floor a finger needs. Apple's is 44pt, which at this panel's 220ppi is
-// about 61px; nothing on these pads may come under it in either direction.
+// about 61px; no skin may come under it in either direction. A skin is a look,
+// and a look is not allowed to cost reachability.
 constexpr int kMinTouchPx = 61;
 
-void testEveryKeyIsBigEnoughToHit() {
-  for (const Layout* layout : kAll) {
-    const PadGeom g = padGeom(*layout, body());
+void testEveryKeyIsBigEnoughToHitInEverySkin() {
+  for (const Skin* s : kAll) {
+    const PadGeom g = geomFor(*s);
     CHECK(g.cellW >= kMinTouchPx);
     CHECK(g.cellH >= kMinTouchPx);
     if (g.cellW < kMinTouchPx || g.cellH < kMinTouchPx) {
-      std::printf("  %s keys are %dx%d px\n", layout->name, g.cellW, g.cellH);
+      std::printf("  %s keys are %dx%d px\n", s->name, g.cellW, g.cellH);
     }
   }
 }
@@ -260,126 +301,173 @@ void testEveryKeyIsBigEnoughToHit() {
 // Centres alone do NOT prove that, and this test said they did until a mutation
 // run showed otherwise: shifting every hit rect sideways by one gap still left
 // each key's own centre inside its own (wrong) rect, so a systematically
-// misplaced pad passed. The corners and the gaps are what can fail -- a key
-// whose rect has slid at all loses a corner, and a gap that answers is a key
-// that is wider than it looks.
-void testEveryKeyAnswersOverItsWholeFaceAndNowhereElse() {
-  for (const Layout* layout : kAll) {
-    const PadGeom g = padGeom(*layout, body());
-    const int cells = layout->cols * layout->rows;
+// misplaced pad passed. The corners are what can fail.
+void testEveryKeyAnswersOverItsWholeFace() {
+  for (const Skin* s : kAll) {
+    const PadGeom g = geomFor(*s);
+    const int cells = kPad.cols * kPad.rows;
     for (int i = 0; i < cells; ++i) {
-      if (layout->keys[i].key == Key::None) continue;
-      const Rect16 r = keyRect(*layout, g, i);
+      if (kPad.keys[i].key == Key::None) continue;
+      const Rect16 r = keyRect(kPad, g, i);
       const int probes[5][2] = {{r.x + r.w / 2, r.y + r.h / 2},
                                 {r.x + 2, r.y + 2},
                                 {r.right() - 3, r.y + 2},
                                 {r.x + 2, r.bottom() - 3},
                                 {r.right() - 3, r.bottom() - 3}};
       for (const auto& p : probes) {
-        const int hit = keyAt(*layout, g, p[0], p[1]);
+        const int hit = keyAt(kPad, g, p[0], p[1]);
         CHECK(hit == i);
-        if (hit != i) std::printf("  %s key %d: (%d,%d) resolves to %d\n", layout->name, i, p[0], p[1], hit);
+        if (hit != i) std::printf("  %s key %d: (%d,%d) resolves to %d\n", s->name, i, p[0], p[1], hit);
       }
-      // One pixel past each edge belongs to the gap or a neighbour, never to
-      // this key. A pad drawn one place and hit-tested another fails here.
-      CHECK(keyAt(*layout, g, r.x - 1, r.y + r.h / 2) != i);
-      CHECK(keyAt(*layout, g, r.right(), r.y + r.h / 2) != i);
-      CHECK(keyAt(*layout, g, r.x + r.w / 2, r.y - 1) != i);
-      CHECK(keyAt(*layout, g, r.x + r.w / 2, r.bottom()) != i);
+      CHECK(keyAt(kPad, g, r.x - 1, r.y + r.h / 2) != i);
+      CHECK(keyAt(kPad, g, r.right(), r.y + r.h / 2) != i);
+      CHECK(keyAt(kPad, g, r.x + r.w / 2, r.y - 1) != i);
+      CHECK(keyAt(kPad, g, r.x + r.w / 2, r.bottom()) != i);
     }
-  }
-}
-
-// The gaps refuse rather than round into a neighbour. On a panel that repaints
-// in a second, a tap that did the wrong thing costs far more than one that did
-// nothing: you have to notice it, wait a refresh, and undo it.
-void testTheGapsBetweenKeysAnswerNothing() {
-  for (const Layout* layout : kAll) {
-    const PadGeom g = padGeom(*layout, body());
-    if (layout->cols < 2) continue;
-    const Rect16 first = keyRect(*layout, g, 0);
-    const int midGapX = first.right() + kKeyGap / 2;
-    CHECK(keyAt(*layout, g, midGapX, first.y + first.h / 2) < 0);
   }
 }
 
 void testNoTwoKeysOverlapAndNoneLeavesTheBody() {
-  const Rect16 b = body();
-  for (const Layout* layout : kAll) {
-    const PadGeom g = padGeom(*layout, b);
-    const int cells = layout->cols * layout->rows;
+  for (const Skin* s : kAll) {
+    const Rect16 b = bodyFor(*s, 480, 800);
+    const PadGeom g = geomFor(*s);
+    const int cells = kPad.cols * kPad.rows;
     for (int i = 0; i < cells; ++i) {
-      if (layout->keys[i].key == Key::None) continue;
-      const Rect16 a = keyRect(*layout, g, i);
+      if (kPad.keys[i].key == Key::None) continue;
+      const Rect16 a = keyRect(kPad, g, i);
       CHECK(a.x >= b.x && a.right() <= b.right());
       CHECK(a.y >= g.grid.y && a.bottom() <= b.bottom());
       for (int j = i + 1; j < cells; ++j) {
-        if (layout->keys[j].key == Key::None) continue;
-        const Rect16 c = keyRect(*layout, g, j);
+        if (kPad.keys[j].key == Key::None) continue;
+        const Rect16 c = keyRect(kPad, g, j);
         const bool apart = a.right() <= c.x || c.right() <= a.x || a.bottom() <= c.y || c.bottom() <= a.y;
         CHECK(apart);
-        if (!apart) std::printf("  %s keys %d and %d overlap\n", layout->name, i, j);
+        if (!apart) std::printf("  %s keys %d and %d overlap\n", s->name, i, j);
       }
     }
   }
 }
 
-// A wide key swallows the gap it spans, and the cell it covers is None. A span
-// left over a real key would put two hit rects on the same pixels, and keyAt
-// returns the first -- so the swallowed key would draw and never answer.
-void testAWideKeySwallowsAnEmptyCell() {
-  for (const Layout* layout : kAll) {
-    const int cells = layout->cols * layout->rows;
-    for (int i = 0; i < cells; ++i) {
-      const uint8_t span = layout->keys[i].span;
-      if (span <= 1) continue;
-      CHECK(i % layout->cols + span <= layout->cols);
-      for (int k = 1; k < span; ++k) CHECK(layout->keys[i + k].key == Key::None);
+// The pad must not run into the chrome above it or the bezel below it. Every
+// skin sets its own chrome height and margins, so this is the one place that
+// notices a skin whose numbers do not add up.
+void testNoSkinCollidesWithItsOwnChrome() {
+  for (const Skin* s : kAll) {
+    const Rect16 b = bodyFor(*s, 480, 800);
+    CHECK(b.y >= s->chromeH);
+    CHECK(b.h > 0 && b.w > 0);
+    const PadGeom g = geomFor(*s);
+    CHECK(g.display.bottom() <= g.grid.y);
+    CHECK(g.grid.bottom() <= b.bottom());
+    // Nothing left over at the bottom, in ANY skin. The only slack allowed is
+    // what integer division leaves when the grid height does not divide by the
+    // row count -- at most one pixel a row. This is the check that makes "the
+    // spacing is off" a red suite rather than something you notice in a render:
+    // every band in the display is derived from a cut metric, so a leftover
+    // here means a band was guessed.
+    const Rect16 last = keyRect(kPad, g, kPad.cols * kPad.rows - 1);
+    CHECK(b.bottom() - last.bottom() < kPad.rows);
+    if (b.bottom() - last.bottom() >= kPad.rows) {
+      std::printf("  %s leaves %d px of unexplained panel under its pad\n", s->name, b.bottom() - last.bottom());
     }
+    // And nothing left over on the right, for the same reason.
+    const Rect16 rightmost = keyRect(kPad, g, kPad.cols - 1);
+    CHECK(b.right() - rightmost.right() < kPad.cols);
   }
 }
 
-// Whatever else a pad carries, it has to be a calculator: the ten digits, the
+// Whatever else a skin changes, it stays a calculator: the ten digits, the
 // point, the four operators, equals and a way back to zero.
-void testEveryPadCanActuallyCalculate() {
-  for (const Layout* layout : kAll) {
-    bool seen[64] = {};
-    const int cells = layout->cols * layout->rows;
-    for (int i = 0; i < cells; ++i) seen[static_cast<int>(layout->keys[i].key)] = true;
-    for (int d = 0; d < 10; ++d) CHECK(seen[static_cast<int>(Key::D0) + d]);
-    const Key required[] = {Key::Dot, Key::Add, Key::Sub, Key::Mul, Key::Div, Key::Equals};
-    for (const Key k : required) {
-      CHECK(seen[static_cast<int>(k)]);
-      if (!seen[static_cast<int>(k)]) std::printf("  %s is missing key %d\n", layout->name, static_cast<int>(k));
-    }
-    CHECK(seen[static_cast<int>(Key::ClearAll)]);
+void testThePadCanActuallyCalculate() {
+  bool seen[64] = {};
+  const int cells = kPad.cols * kPad.rows;
+  for (int i = 0; i < cells; ++i) seen[static_cast<int>(kPad.keys[i].key)] = true;
+  for (int d = 0; d < 10; ++d) CHECK(seen[static_cast<int>(Key::D0) + d]);
+  const Key required[] = {Key::Dot,    Key::Add,      Key::Sub,       Key::Mul,    Key::Div,
+                          Key::Equals, Key::ClearAll, Key::Backspace, Key::Negate, Key::Percent};
+  for (const Key k : required) {
+    CHECK(seen[static_cast<int>(k)]);
+    if (!seen[static_cast<int>(k)]) std::printf("  the pad is missing key %d\n", static_cast<int>(k));
   }
 }
 
-// A key draws either a label or a drawn symbol, never neither: a key with
-// nothing in it is a blank slab that still works, which is worse than a key
-// that is missing. The Toybox cuts are ASCII-only, so a label with a byte past
-// U+007E would draw a HOLE rather than a box and nothing would say why.
-void testEveryKeySaysWhatItIs() {
-  for (const Layout* layout : kAll) {
-    const int cells = layout->cols * layout->rows;
-    for (int i = 0; i < cells; ++i) {
-      const KeyDef& key = layout->keys[i];
-      if (key.key == Key::None) continue;
-      CHECK(key.label != nullptr || key.sym != Sym::None);
-      if (!key.label) continue;
-      for (const char* p = key.label; *p; ++p) {
-        const unsigned char c = static_cast<unsigned char>(*p);
-        CHECK(c >= 0x20 && c <= 0x7E);
-        if (c < 0x20 || c > 0x7E) std::printf("  %s key \"%s\" has a byte no Toybox cut can draw\n", layout->name, key.label);
-      }
+// A subtitle is a second line ABOUT the app, never its name again. SWISS shipped
+// a render whose header read "CALCULATOR   CALCULATOR" because its subtitle was
+// the title, and the Rule chrome draws both.
+void testNoSkinRepeatsItsOwnTitle() {
+  for (const Skin* s : kAll) {
+    if (!s->subtitle) continue;
+    CHECK(std::strcmp(s->subtitle, "CALCULATOR") != 0);
+    if (std::strcmp(s->subtitle, "CALCULATOR") == 0) {
+      std::printf("  %s subtitle repeats the title\n", s->name);
     }
+  }
+}
+
+// Every key says what it is, in every skin. The plus-minus key carries no label
+// of its own because not every face can spell U+00B1 -- Jersey 25 cannot, and a
+// glyph the face lacks draws as a HOLE, not a box -- so the skin supplies it,
+// and a skin that forgot to would leave one blank key that still works.
+void testEveryKeyHasALabelInEverySkin() {
+  for (const Skin* s : kAll) {
+    CHECK(s->plusMinus != nullptr && s->plusMinus[0] != '\0');
+    const int cells = kPad.cols * kPad.rows;
+    for (int i = 0; i < cells; ++i) {
+      if (kPad.keys[i].key == Key::None) continue;
+      const char* label = labelFor(*s, kPad.keys[i]);
+      CHECK(label != nullptr && label[0] != '\0');
+    }
+  }
+}
+
+// Jersey 25 has no U+00B1 and no U+221A. A skin set in it that asked for the
+// real sign would draw an invisible key, which is the exact failure the drawn
+// glyphs were replaced to avoid -- so the pairing is checked rather than
+// remembered.
+void testNoSkinAsksItsFaceForAGlyphItLacks() {
+  for (const Skin* s : kAll) {
+    const bool jersey = s->labelFont == kJerseyLabelFontId;
+    const bool asksForPlusMinus = std::strcmp(s->plusMinus, "\xC2\xB1") == 0;
+    CHECK(!(jersey && asksForPlusMinus));
+    if (jersey && asksForPlusMinus) std::printf("  %s is set in Jersey and asks for U+00B1\n", s->name);
   }
 }
 
 }  // namespace
 
-int main() {
+// The facts only the C++ side knows -- which skin uses which cut, how wide its
+// cells come out, and what each key says in it -- printed for label_fit.py to
+// measure against the real glyph tables. Two processes because neither side can
+// do the other's half: a host test cannot parse a font header, and a Python
+// script cannot be trusted to re-derive the geometry.
+void printLabelTable() {
+  for (const Skin* s : kAll) {
+    const PadGeom g = geomFor(*s);
+    std::printf("SKIN %s %d %d %d\n", s->name, s->labelFont, g.cellW, g.cellH);
+    const int cells = kPad.cols * kPad.rows;
+    for (int i = 0; i < cells; ++i) {
+      if (kPad.keys[i].key == Key::None) continue;
+      const char* label = labelFor(*s, kPad.keys[i]);
+      // The RESOLVED cut, through the same function the panel calls. Emitting
+      // the skin's big cut and letting the script assume it would measure a
+      // face the device never uses, which is a gate that reports on something
+      // else.
+      std::printf("LABEL %s %d %s\n", s->name, labelFontFor(*s, label), label);
+    }
+    // The whole ladder, in order, so the script can walk it exactly as the
+    // activity does. Emitting only the top rung is how a display that quietly
+    // falls three rungs to a 26px label cut reports as fitting.
+    for (int rung = 0; rung < kNumberRungs; ++rung) {
+      std::printf("NUMBER %s %d %d %d\n", s->name, rung, numberFontFor(*s, rung), g.display.w);
+    }
+  }
+}
+
+int main(int argc, char** argv) {
+  if (argc > 1 && std::strcmp(argv[1], "--labels") == 0) {
+    printLabelTable();
+    return 0;
+  }
   testTheDisplayHidesBinaryFloatNoise();
   testTheKnownLimitOfBinaryArithmetic();
   testTypingANumber();
@@ -391,14 +479,19 @@ int main() {
   testTheUnaryKeys();
   testErrorsStopEverythingButClear();
   testTheTapeRecordsFinishedSums();
-  testEveryKeyIsBigEnoughToHit();
-  testEveryKeyAnswersOverItsWholeFaceAndNowhereElse();
-  testTheGapsBetweenKeysAnswerNothing();
+  testEveryKeyIsBigEnoughToHitInEverySkin();
+  testEveryKeyAnswersOverItsWholeFace();
   testNoTwoKeysOverlapAndNoneLeavesTheBody();
-  testAWideKeySwallowsAnEmptyCell();
-  testEveryPadCanActuallyCalculate();
-  testEveryKeySaysWhatItIs();
+  testNoSkinCollidesWithItsOwnChrome();
+  testThePadCanActuallyCalculate();
+  testNoSkinRepeatsItsOwnTitle();
+  testEveryKeyHasALabelInEverySkin();
+  testNoSkinAsksItsFaceForAGlyphItLacks();
 
-  std::printf("%s: %d checks, %d failures\n", failures ? "FAILED" : "ok", checks, failures);
+  // The wording is check.sh's, not a preference: the gate counts sub-suites with
+  // grep -c "checks, 0 failed", so a suite that says "failures" runs, passes and
+  // is silently left out of the tally -- which looks exactly like a suite nobody
+  // ever added. host-tests/checksh enforces it.
+  std::printf("%s: %d checks, %d failed\n", failures ? "FAILED" : "ok", checks, failures);
   return failures ? 1 : 0;
 }

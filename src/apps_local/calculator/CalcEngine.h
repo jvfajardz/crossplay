@@ -45,6 +45,8 @@ constexpr int kSignificantDigits = 12;
 // twelve-digit RESULT, and letting someone type thirteen digits that then round
 // is worse than refusing the thirteenth keypress.
 constexpr int kMaxEntryDigits = 12;
+// What a result carries once it goes to an exponent. See formatNumber.
+constexpr int kScientificDigits = 9;
 constexpr size_t kTextMax = 32;
 
 // Twelve-significant-digit rendering, trailing zeros and all, with the C
@@ -61,6 +63,13 @@ inline void formatNumber(const double v, char* out, const size_t n) {
   const double value = (v == 0.0) ? 0.0 : v;
   std::snprintf(out, n, "%.*g", kSignificantDigits, value);
   char* e = std::strchr(out, 'e');
+  if (!e) return;
+  // Gone scientific: redo it at nine. The twelve exist to hide binary noise in
+  // the FIXED form, where a wrong seventeenth digit becomes 0.30000000000000004;
+  // beside an exponent they only make the string wider, and every calculator
+  // that shows an exponent shows fewer digits in front of it.
+  std::snprintf(out, n, "%.*g", kScientificDigits, value);
+  e = std::strchr(out, 'e');
   if (!e) return;
   const bool negExp = e[1] == '-';
   const char* digits = e + ((e[1] == '+' || e[1] == '-') ? 2 : 1);
@@ -100,31 +109,53 @@ class Engine {
 
     if (isDigit(k)) return pressDigit(digitValue(k));
     switch (k) {
-      case Key::Dot: return pressDot();
+      case Key::Dot:
+        return pressDot();
       case Key::Add:
       case Key::Sub:
       case Key::Mul:
-      case Key::Div: return pressOperator(k);
-      case Key::Equals: return pressEquals();
-      case Key::Percent: return pressPercent();
-      case Key::Negate: return pressNegate();
-      case Key::ClearAll: return clearAll();
-      case Key::ClearEntry: return clearEntry();
-      case Key::Backspace: return pressBackspace();
-      case Key::Sqrt: return pressUnary(k);
-      case Key::Square: return pressUnary(k);
-      case Key::Reciprocal: return pressUnary(k);
-      case Key::Abs: return pressUnary(k);
-      case Key::Ln: return pressUnary(k);
-      case Key::Log10: return pressUnary(k);
-      case Key::Exp10: return pressUnary(k);
-      case Key::Sin: return pressUnary(k);
-      case Key::Cos: return pressUnary(k);
-      case Key::Tan: return pressUnary(k);
-      case Key::Factorial: return pressUnary(k);
-      case Key::Pi: return pressConstant(3.14159265358979323846);
-      case Key::Euler: return pressConstant(2.71828182845904523536);
-      default: return;  // 2nd, ANS, brackets: the EXPRESSION pad's, not this one
+      case Key::Div:
+        return pressOperator(k);
+      case Key::Equals:
+        return pressEquals();
+      case Key::Percent:
+        return pressPercent();
+      case Key::Negate:
+        return pressNegate();
+      case Key::ClearAll:
+        return clearAll();
+      case Key::ClearEntry:
+        return clearEntry();
+      case Key::Backspace:
+        return pressBackspace();
+      case Key::Sqrt:
+        return pressUnary(k);
+      case Key::Square:
+        return pressUnary(k);
+      case Key::Reciprocal:
+        return pressUnary(k);
+      case Key::Abs:
+        return pressUnary(k);
+      case Key::Ln:
+        return pressUnary(k);
+      case Key::Log10:
+        return pressUnary(k);
+      case Key::Exp10:
+        return pressUnary(k);
+      case Key::Sin:
+        return pressUnary(k);
+      case Key::Cos:
+        return pressUnary(k);
+      case Key::Tan:
+        return pressUnary(k);
+      case Key::Factorial:
+        return pressUnary(k);
+      case Key::Pi:
+        return pressConstant(3.14159265358979323846);
+      case Key::Euler:
+        return pressConstant(2.71828182845904523536);
+      default:
+        return;  // 2nd, ANS, brackets: the EXPRESSION pad's, not this one
     }
   }
 
@@ -256,14 +287,22 @@ class Engine {
 
   bool apply(const Key op, const double lhs, const double rhs, double& out) {
     switch (op) {
-      case Key::Add: out = lhs + rhs; break;
-      case Key::Sub: out = lhs - rhs; break;
-      case Key::Mul: out = lhs * rhs; break;
+      case Key::Add:
+        out = lhs + rhs;
+        break;
+      case Key::Sub:
+        out = lhs - rhs;
+        break;
+      case Key::Mul:
+        out = lhs * rhs;
+        break;
       case Key::Div:
         if (rhs == 0.0) return fail("Cannot divide by zero");
         out = lhs / rhs;
         break;
-      default: out = rhs; break;
+      default:
+        out = rhs;
+        break;
     }
     if (std::isnan(out) || std::isinf(out)) return fail("Overflow");
     return true;
@@ -353,34 +392,62 @@ class Engine {
     double v = 0.0;
     switch (k) {
       case Key::Sqrt:
-        if (x < 0.0) { fail("Invalid input"); return; }
+        if (x < 0.0) {
+          fail("Invalid input");
+          return;
+        }
         v = std::sqrt(x);
         break;
-      case Key::Square: v = x * x; break;
+      case Key::Square:
+        v = x * x;
+        break;
       case Key::Reciprocal:
-        if (x == 0.0) { fail("Cannot divide by zero"); return; }
+        if (x == 0.0) {
+          fail("Cannot divide by zero");
+          return;
+        }
         v = 1.0 / x;
         break;
-      case Key::Abs: v = std::fabs(x); break;
+      case Key::Abs:
+        v = std::fabs(x);
+        break;
       case Key::Ln:
-        if (x <= 0.0) { fail("Invalid input"); return; }
+        if (x <= 0.0) {
+          fail("Invalid input");
+          return;
+        }
         v = std::log(x);
         break;
       case Key::Log10:
-        if (x <= 0.0) { fail("Invalid input"); return; }
+        if (x <= 0.0) {
+          fail("Invalid input");
+          return;
+        }
         v = std::log10(x);
         break;
-      case Key::Exp10: v = std::pow(10.0, x); break;
-      case Key::Sin: v = std::sin(x); break;
-      case Key::Cos: v = std::cos(x); break;
-      case Key::Tan: v = std::tan(x); break;
+      case Key::Exp10:
+        v = std::pow(10.0, x);
+        break;
+      case Key::Sin:
+        v = std::sin(x);
+        break;
+      case Key::Cos:
+        v = std::cos(x);
+        break;
+      case Key::Tan:
+        v = std::tan(x);
+        break;
       case Key::Factorial: {
-        if (x < 0.0 || x != std::floor(x) || x > 170.0) { fail("Invalid input"); return; }
+        if (x < 0.0 || x != std::floor(x) || x > 170.0) {
+          fail("Invalid input");
+          return;
+        }
         v = 1.0;
         for (int i = 2; i <= static_cast<int>(x); ++i) v *= i;
         break;
       }
-      default: return;
+      default:
+        return;
     }
     if (std::isnan(v) || std::isinf(v)) {
       fail("Overflow");
@@ -404,15 +471,20 @@ class Engine {
 
   static const char* opGlyph(const Key op) {
     switch (op) {
-      case Key::Add: return "+";
-      case Key::Sub: return "-";
-      // `x` and `/`, not the multiplication and division signs: the Toybox
-      // cuts are ASCII-only and U+00D7 would draw as nothing at all. The KEYS
-      // get the real signs because a key is drawn from primitives; a line of
-      // text cannot be.
-      case Key::Mul: return "x";
-      case Key::Div: return "/";
-      default: return "?";
+      case Key::Add:
+        return "+";
+      case Key::Sub:
+        return "\xE2\x88\x92";
+      // The real signs, as UTF-8. Safe because every line the engine produces
+      // is drawn in a calculator cut, and all three of those carry U+00D7,
+      // U+00F7 and U+2212 -- which is the entire reason those cuts exist. A
+      // Toybox cut would draw them as nothing at all.
+      case Key::Mul:
+        return "\xC3\x97";
+      case Key::Div:
+        return "\xC3\xB7";
+      default:
+        return "?";
     }
   }
 

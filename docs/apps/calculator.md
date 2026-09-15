@@ -1,155 +1,181 @@
 # Calculator
 
-A calculator for the X4 Pro. What is settled, what is still Mario's to settle,
-and the five candidate pads that exist to settle the biggest of them.
+One calculator, five finished looks. What is settled, what is still Mario's, and
+the things that had to be fixed at the source rather than styled around.
 
-## The panel decides the pad, and it is roomier than it looks
+## Two rules that are not up for discussion
 
-Portrait, 480x800. The Toybox chrome takes the top 83px (band 76 + gap 4 + rule
-3) and `toybox::kBodyTop` puts the first content row at 119; with `kMargin`
-either side and below, an app owns **448 x 665**.
+**No rounded corners.** Mario, 2026-09-15. A radius is not one of five looks, it
+is a house style applied to all five, and it was flattening the differences the
+five exist to show. What separates them now is border weight, fill, lattice,
+inset and typeface.
 
-At a 12px gutter that is generous for keys. Measured off `calc::padGeom`, with
-the panel's 220ppi converted to millimetres:
+**No unexplained space.** Every vertical band on the screen is DERIVED from a
+cut metric rather than picked: `displayHeightFor` is the pending line's own line
+height, plus the number's cap height and its air, plus the rule, plus a tape's
+lines if it has them. Nothing is left over at the end.
 
-| candidate  | grid | key px  | key mm      |
-| ---------- | ---- | ------- | ----------- |
-| PHONE      | 4x5  | 103x97  | 11.9 x 11.2 |
-| DESKTOP    | 4x6  | 103x78  | 11.9 x 9.0  |
-| TAPE       | 4x5  | 103x71  | 11.9 x 8.2  |
-| SCIENTIFIC | 5x7  | 80x68   | 9.2 x 7.9   |
-| EXPRESSION | 5x5  | 80x85   | 9.2 x 9.8   |
+That is not tidiness, it is the fix for a real defect. In the first pass every
+skin carried a guessed display height, the number was pinned to the bottom of
+it, and the remainder came out as a band of empty panel over every result --
+different in each skin, explained by nothing. `host-tests/calculator` now refuses
+any skin that leaves more than one pixel a row unaccounted for under its pad, and
+`label_fit.py` checks `CalcCutMetrics.h` against the real font headers, so a
+regenerated cut cannot move a band without going red.
 
-Apple's minimum touch target is 44pt, about **61px** here, and the smallest of
-these clears it by 7px in its tightest direction. `host-tests/calculator`
-asserts that floor rather than leaving it as a claim, so a pad that grows a row
-fails instead of shipping small. **Six columns is where it stops**: 448px over
-six columns is 64px, 7.4mm, and on a panel with no tap feedback at all a miss
-costs a full refresh to notice and another to undo.
+The derivation immediately earned itself: LEDGER asked for four tape lines, which
+left 55px key rows against a 61px touch floor, and the suite said so. A guessed
+height would have taken that space out of the pad silently.
 
-## The keys are drawn, not typed, and that is not a style choice
+## The pad
 
-`toybox_14`, `_20`, `_30`, `_44` and `_64` are Jersey 25 converted from an
-**ASCII-only** TTF: `U+0020..U+007E` and nothing else (only `toybox_10` carries
-Latin-1). So `÷` `×` `±` `√` and any backspace arrow are not characters to use
-carefully -- they are characters that draw as **empty space**, silently, because
-a glyph the face lacks is a hole rather than a box. Regenerating a cut with more
-glyphs is worse: a regenerated Toybox cut does not reproduce, it moves every
-glyph's metrics and reflows every screen in the fork.
+Portrait, 480x800. Every skin lays out from `calc::bodyFor`, which is chrome
+height plus one gutter down from the panel's top and one margin in from each
+side. The arrangement is the iPhone's -- the pad the most hands already know --
+with two changes every desk calculator also makes: **DEL** rather than a swipe
+to lose a digit (Casio spells it exactly that way), and a plus-minus key in the
+corner where the iPhone puts a double-width zero, so the grid is uniform and a
+lattice skin has something to tile.
 
-Those five are therefore drawn from primitives in
-`CalculatorActivity::drawSymbol`, sized off the key so one routine serves a
-103px pad and an 80px one. `testEveryKeySaysWhatItIs` refuses any label with a
-byte past `U+007E`, so the next key somebody adds cannot reintroduce it.
+```
+AC   DEL   %   /        20 keys, 4 x 5
+7    8     9   x
+4    5     6   -
+1    2     3   +
++/-  0     .   =
+```
+
+Measured key sizes, at the panel's 220ppi:
+
+| skin       | key px  | key mm      | face            | what carries it                |
+| ---------- | ------- | ----------- | --------------- | ------------------------------ |
+| TOYBOX     | 103x98  | 11.9 x 11.3 | Jersey 25       | black band, border weight      |
+| INSTRUMENT | 113x105 | 13.0 x 12.1 | Ubuntu Bold     | tiling keys, filled column     |
+| NIGHT      | 101x96  | 11.7 x 11.1 | Ubuntu Bold     | inverted ground, filled column |
+| SWISS      | 110x113 | 12.7 x 13.0 | Jersey 25       | hairline lattice, no borders   |
+| LEDGER     | 100x68  | 11.5 x 7.9  | Noto Serif Bold | serif, three-line tape         |
+
+Apple's minimum touch target is 44pt, about **61px** here, and
+`host-tests/calculator` asserts that floor for every skin: a look is not allowed
+to cost reachability.
+
+## The symbols are type now, and that was the whole problem
+
+The first five renders had hand-drawn operator glyphs and they looked homemade,
+because they were. The cause was one line in `gen_toybox_fonts.sh`: the Toybox
+cuts are Jersey 25 **subset to U+0020-007E**, so the division sign, the
+multiplication sign and the minus sign draw as NOTHING -- a glyph the face lacks
+is a hole, not a box. Jersey has had all three all along.
+
+`tools_local/toybox/gen_calc_fonts.sh` cuts the calculator's own faces with the
+math block included. They are NEW files, never wider versions of the Toybox
+cuts, because `gen_toybox_fonts.sh` spells out at length that regenerating
+`toybox_20` or `_30` today moves every glyph a pixel and silently shifts text in
+every app in the fork. A cut nothing else uses cannot do that to anybody.
+
+Five cuts per face, not one: **a calculator sets its word keys smaller than its
+digits.** Look at any of them. Here it is also the only way DEL fits a key at
+all -- Ubuntu Bold draws it 103px wide at 26px, in a 103px key. `labelFontFor`
+picks by label length, structurally, so the host gate can resolve the same face
+the panel will.
+
+What each face can spell decides which skin gets which key: Jersey has no
+U+00B1, so the skins set in it print **+/-** and the others print **±**. Both
+are real calculator conventions; an invisible key is not.
+
+## The gate that catches a label before a person does
+
+`host-tests/calculator/label_fit.py` measures every key label, in the cut its
+skin resolves, against the cell that skin produces. A host test cannot parse a
+font header and a screenshot only shows the skin somebody photographed, so this
+is the only thing that can see the failure. It found NIGHT's DEL within a pixel
+and a half of its border on both sides, and LEDGER's **fifteen pixels wider than
+its key** -- in a skin whose render nobody had looked at yet.
+
+It checks the invisible half too: a codepoint the face has no glyph for is
+reported rather than silently costing zero width.
 
 ## The pad is hit-tested against geometry, not registered
 
-`toybox::kMaxInteractions` is 24 and the SCIENTIFIC pad is 35 keys. A screen
-that registers more loses the **last** ones registered, on the device only,
-silently: they draw, they look live, and they answer nothing. That is how the
-Connections archive shipped with every date from the 20th onward dead.
+`toybox::kMaxInteractions` is 24. Twenty keys fits, but a screen that goes past
+it loses the **last** ones registered, on the device only, silently -- they
+draw, they look live, and they answer nothing. That is how the Connections
+archive shipped with every date from the 20th onward dead. So `calc::keyRect` is
+the one geometry function, `drawPad` draws from it and `loop()` hit-tests
+against it.
 
-So `calc::keyRect` is the one geometry function, `drawPad` draws from it and
-`loop()` hit-tests against it. `host-tests/calculator` probes every key's centre
-**and its four corners**, and requires one pixel past each edge to belong to
-something else. Centres alone are not enough and this suite said they were until
-a mutation run proved otherwise: shifting every hit rect sideways by one gap
-left each key's own centre inside its own wrong rect, and the whole pad passed.
+The suite probes every key's centre **and its four corners**, and requires one
+pixel past each edge to belong to something else. Centres alone are not enough
+and this suite said they were until a mutation run proved otherwise: shifting
+every hit rect sideways by one gap left each key's own centre inside its own
+wrong rect, and the whole pad passed.
 
 ## What is settled about the arithmetic
 
 `CalcEngine.h` is freestanding C++17 and every case below is one where
-calculators are commonly wrong. All are pinned in the suite.
+calculators are commonly wrong. All are pinned.
 
 - **0.1 + 0.2 shows 0.3.** The fix is not decimal arithmetic, it is printing at
-  **twelve significant digits** when the double carries about seventeen. That is
+  twelve significant digits when the double carries about seventeen. That is
   what iOS does, and it is why its calculator looks exact.
 - **Percent reads the pending operator.** `200 + 10 %` is 220; `200 x 10 %` is
-  20. Not one operation, a convention -- and the most commonly reimplemented
-  wrong key on a calculator.
+  20. Not one operation, a convention.
 - **`2 + 3 = = =` is 5, 8, 11.** Equals repeats the operator and the operand.
 - **Two operators in a row replace**, they do not stack.
 - **An error is a wall.** Divide by zero says so and then refuses every key but
   clear, rather than letting a digit land on top of the message.
 - **The thirteenth typed digit is refused**, not accepted and silently rounded.
 
-## What is NOT settled, and why each is Mario's
+## What is NOT settled
 
-### 1. Which pad
+### 1. Which skin
 
-Five are built behind `-DCALC_VARIANT=n` and rendered from the simulator
-(`qa-artifacts/calculator-five.png`). Four of the five are deleted in the commit
-that picks one.
+Five are built behind `-DCALC_SKIN=n` and rendered from the simulator. Four go
+away in the commit that picks one, along with the faces only they used.
 
 ### 2. The near-zero residue: double, or decimal?
 
 Twelve-digit rounding fixes every case where the error is small against the
-result and **none** where the result itself is near zero, because the error is
-then the whole answer:
+result and **none** where the result itself is near zero:
 
     0.1 + 0.2        ->  0.3                   fixed
-    1.1 x 3          ->  3.3                   fixed
     0.1 + 0.2 - 0.3  ->  5.55111512313e-17     NOT fixed
 
 Casio shows `0` there because Casio's arithmetic is decimal (BCD), not because
-its display is cleverer. The two honest options are:
-
-- **double + 12-digit display rounding** -- what ships today, ~0 extra flash,
-  and `0.1+0.2-0.3` shows the residue. What iOS does.
-- **IBM decNumber** (ICU licence, ~25KB flash measured on ESP32-S3, 36 bytes a
-  number, no exceptions, no allocation at our precision) -- `0.1+0.2-0.3` is
-  exactly `0`.
-
-`testTheKnownLimitOfBinaryArithmetic` pins the residue **as a test**, so the
-boundary is documented rather than waiting to be discovered by a user. If that
-test ever has to change, the change is decNumber and not a bigger rounding.
-There is a popular hack -- snap to zero when the result is tiny against the
-operands -- and it is a lie that will eventually give a wrong answer to somebody
-doing legitimate small-number arithmetic. Not shipping it.
+its display is cleverer. The options are double plus display rounding (what
+ships, what iOS does, no extra flash) or IBM decNumber (ICU licence, ~25KB
+measured on ESP32-S3, no exceptions, no allocation at our precision).
+`testTheKnownLimitOfBinaryArithmetic` pins the residue **as a test**, so if that
+test ever has to change the change is decNumber and not a bigger rounding.
 
 ### 3. Percent on x and /
 
-`500 x 5 %` is **25** on iOS and Casio (percent becomes a plain hundredth) and
-**12500** on Windows (the pocket-calculator rule: the two values are multiplied
-and divided by 100). The engine does the iOS thing, and
-`testPercentReadsThePendingOperator` is the one line that changes if Windows is
-wanted.
+`500 x 5 %` is **25** on iOS and Casio and **12500** on Windows. The engine does
+the iOS thing, and `testPercentReadsThePendingOperator` is the one line that
+changes.
 
 ## What no library does, and what one does
 
-The parser is the part with good off-the-shelf options and it is also the
-smallest part of the job.
+No parser is vendored. `tinyexpr` (zlib, ~1000 lines, 6.5KB of flash measured on
+an ESP32-S3) is the right one if a typed-expression mode is ever wanted -- built
+as `.c`, not C++, and with `-DTE_POW_FROM_RIGHT -DTE_NAT_LOG`, because its
+defaults make `-2^2` be 4. This pad does not need it: it is an
+immediate-execution machine and there is no expression to parse.
 
-- **EXPRESSION needs one**: `tinyexpr` (zlib, ~1000 lines, **6.5KB of flash**
-  measured on ESP32-S3, C99, no exceptions, no RTTI). Compile it as `.c`, not
-  C++ -- as C++ it is 121 `void*` conversion errors -- and with
-  `-DTE_POW_FROM_RIGHT -DTE_NAT_LOG`, because its defaults make `-2^2` be 4 and
-  `log` be base 10. Its `err` reports syntax position only: `1/0` comes back as
-  `inf` with no error flag, so the result must be `isfinite`-checked before it
-  is shown. Not vendored yet, because it is dead weight in the other four pads.
-- **The other four need none.** They are immediate-execution machines: there is
-  no expression to parse, and no library anywhere supplies the input state
-  machine, the percent convention, the repeated-equals rule or the display
-  formatting. Those are this file's ~350 lines and its test suite.
-
-Rejected, each for a reason rather than taste: **tinyexpr++** (C++20 and 76
-`throw` sites; exceptions are off in this build), **muParser** (exceptions are
-its only error channel), **ExprTk** (RTTI, and a 1.66MB header), **Windows
-Calculator's RatPack** (MIT and genuinely exact -- arbitrary-precision
-rationals -- but it throws raw ints and returns `std::wstring`), **Android's
-constructive reals** (the most rigorous of the lot, and Java).
+What no library anywhere supplies is the input state machine, the percent
+convention, repeated equals and the display formatting. That is this app's own
+~350 lines and its suites. Rejected with reasons: tinyexpr++ (C++20, 76 `throw`
+sites, and exceptions are off here), muParser (exceptions are its only error
+channel), ExprTk (RTTI and a 1.66MB header), Windows Calculator's RatPack
+(genuinely exact, but throws raw ints and returns `std::wstring`).
 
 ## Still to measure
 
 **Every keypress is a whole-screen refresh, and nobody knows what one costs on
 an X4 Pro.** `docs/open-items.md` has this open: the SDK says "0.3-2 s" and that
-is the whole of our knowledge; `displayWindow` exists, is marked EXPERIMENTAL,
-and `HalDisplay` exposes only whole-screen modes. A calculator is the app that
-cares most -- a twelve-tap sum is twelve refreshes -- so the number should be
-taken off the dev-mode device before the pad is finalised. The existing evidence
-that this is tolerable is the on-screen QWERTY keyboard, which people already
-type Wi-Fi passwords on at 46px keys; these are twice that.
-
-One thing does already work in our favour: the pad's hit table never changes
-between frames, so `RevealedInteractions`' "an unchanged table always routes"
-rule keeps taps alive through a repaint. Rapid tapping is not dropped.
+is the whole of our knowledge. A calculator is the app that cares most. The
+existing evidence that it is tolerable is the on-screen QWERTY keyboard people
+already type Wi-Fi passwords on at 46px keys; these are twice that. One thing
+works in our favour: the pad's hit table never changes between frames, so
+`RevealedInteractions`' "an unchanged table always routes" rule keeps taps alive
+through a repaint.
