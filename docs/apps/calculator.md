@@ -107,40 +107,61 @@ and this suite said they were until a mutation run proved otherwise: shifting
 every hit rect sideways by one gap left each key's own centre inside its own
 wrong rect, and the whole pad passed.
 
-## What is settled about the arithmetic
+## What is settled about the KEYS
 
-`CalcEngine.h` is freestanding C++17 and every case below is one where
-calculators are commonly wrong. All are pinned.
+The arithmetic is the next section. This is the other half, and it is the half
+with no library in it: every case below is a place calculators are commonly
+wrong, and all of them are pinned.
 
-- **0.1 + 0.2 shows 0.3.** The fix is not decimal arithmetic, it is printing at
-  twelve significant digits when the double carries about seventeen. That is
-  what iOS does, and it is why its calculator looks exact.
 - **Percent reads the pending operator.** `200 + 10 %` is 220; `200 x 10 %` is
   20. Not one operation, a convention.
 - **`2 + 3 = = =` is 5, 8, 11.** Equals repeats the operator and the operand.
 - **Two operators in a row replace**, they do not stack.
 - **An error is a wall.** Divide by zero says so and then refuses every key but
   clear, rather than letting a digit land on top of the message.
-- **The thirteenth typed digit is refused**, not accepted and silently rounded.
+- **The eleventh typed digit is refused**, not accepted and silently rounded --
+  which is also what keeps an operand from ever being longer than the working
+  precision, where decNumber has a published erratum.
+- **There is no negative zero**, typed or computed. Pressing `0` then `+/-`
+  holds the sign without drawing it; a digit after that is negative.
+- **Every sequence is legal input.** A pad has twenty keys and no grammar, so an
+  operator as the first key, `=` with nothing pending, a digit after `=`,
+  backspace on a result and `...` all have to leave a number on the panel.
+  Nineteen of them are pinned; writing them down is what found the negative
+  zero.
+
+## The arithmetic, and why it is a vendored library
+
+Settled 2026-09-15, by Mario: *"I NEEDS to work as a real calc, no
+0.1 + 0.2 = 0.300000001."*
+
+Twelve-digit display rounding over a `double` fixes every case where the error is
+small against the result and **none** where the result itself is near zero:
+
+    0.1 + 0.2        ->  0.3                   fixed by rounding
+    0.1 + 0.2 - 0.3  ->  5.55111512313e-17     NOT fixed, the error IS the answer
+
+Casio and TI show `0` there because their arithmetic is decimal, not because
+their displays are cleverer. So is ours now: `lib/decNumber`, IBM's decNumber
+under the ICU licence, vendored the way `lib/miniz` is. About 187KB of flash for
+the app, the library and five font cuts together; x4pro sits at 81.5% of its
+slot.
+
+Four details that are easy to get wrong and are all written down beside the code
+that depends on them:
+
+- **Sixteen working digits, ten shown.** The six hidden guard digits are why
+  `(1 / 3) x 3` reads `1`. Every physical calculator carries them.
+- **`ctx.traps = 0`**, or `decContextSetStatus` calls `raise(SIGFPE)` and the
+  first divide by zero aborts the firmware.
+- **`DECNUMDIGITS` 20, not 34**: `decDivideOp` falls back to `malloc` as the
+  precision approaches `DECBUFFER`. `no_malloc_probe.cpp` proves zero calls.
+- **`0/0` is `DEC_Division_undefined`**, a different bit from
+  `DEC_Division_by_zero`.
 
 ## What is NOT settled
 
-### 1. The near-zero residue: double, or decimal?
-
-Twelve-digit rounding fixes every case where the error is small against the
-result and **none** where the result itself is near zero:
-
-    0.1 + 0.2        ->  0.3                   fixed
-    0.1 + 0.2 - 0.3  ->  5.55111512313e-17     NOT fixed
-
-Casio shows `0` there because Casio's arithmetic is decimal (BCD), not because
-its display is cleverer. The options are double plus display rounding (what
-ships, what iOS does, no extra flash) or IBM decNumber (ICU licence, ~25KB
-measured on ESP32-S3, no exceptions, no allocation at our precision).
-`testTheKnownLimitOfBinaryArithmetic` pins the residue **as a test**, so if that
-test ever has to change the change is decNumber and not a bigger rounding.
-
-### 2. Percent on x and /
+### Percent on x and /
 
 `500 x 5 %` is **25** on iOS and Casio and **12500** on Windows. The engine does
 the iOS thing, and `testPercentReadsThePendingOperator` is the one line that
@@ -148,14 +169,15 @@ changes.
 
 ## What no library does, and what one does
 
-No parser is vendored. `tinyexpr` (zlib, ~1000 lines, 6.5KB of flash measured on
-an ESP32-S3) is the right one if a typed-expression mode is ever wanted -- built
-as `.c`, not C++, and with `-DTE_POW_FROM_RIGHT -DTE_NAT_LOG`, because its
-defaults make `-2^2` be 4. This pad does not need it: it is an
-immediate-execution machine and there is no expression to parse.
+The ARITHMETIC is vendored, above. No PARSER is: `tinyexpr` (zlib, ~1000 lines,
+6.5KB of flash measured on an ESP32-S3) is the right one if a typed-expression
+mode is ever wanted -- built as `.c`, not C++, and with `-DTE_POW_FROM_RIGHT
+-DTE_NAT_LOG`, because its defaults make `-2^2` be 4. This pad does not need it:
+it is an immediate-execution machine and there is no expression to parse.
 
 What no library anywhere supplies is the input state machine, the percent
-convention, repeated equals and the display formatting. That is this app's own
+convention, repeated equals and the display formatting -- and in particular
+nothing formats to a CHARACTER BUDGET, which is the half that stops overflow. That is this app's own
 ~350 lines and its suites. Rejected with reasons: tinyexpr++ (C++20, 76 `throw`
 sites, and exceptions are off here), muParser (exceptions are its only error
 channel), ExprTk (RTTI and a 1.66MB header), Windows Calculator's RatPack
