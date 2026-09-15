@@ -92,11 +92,6 @@ class Engine {
   const char* display() const { return display_; }
   const char* pending() const { return pending_; }
   bool hasError() const { return error_; }
-  int tapeCount() const { return tapeCount_; }
-  const char* tapeLine(const int i) const {
-    if (i < 0 || i >= tapeCount_) return "";
-    return tape_[(tapeStart_ + i) % kTapeMax];
-  }
 
   // --- what the pad does ----------------------------------------------------
 
@@ -144,8 +139,6 @@ class Engine {
   }
 
  private:
-  static constexpr int kTapeMax = 8;
-
   void resetEntry() {
     entry_[0] = '0';
     entry_[1] = '\0';
@@ -331,10 +324,6 @@ class Engine {
       takeResult(value);
       return;
     }
-    char lhsText[kTextMax];
-    char rhsText[kTextMax];
-    writeNumber(acc_, lhsText, sizeof(lhsText));
-    writeNumber(rhs, rhsText, sizeof(rhsText));
     decNumber out;
     if (!apply(op, acc_, rhs, &out)) return;
     decNumberCopy(&repeatOperand_, &rhs);
@@ -342,7 +331,6 @@ class Engine {
     pendingOp_ = Key::None;
     pending_[0] = '\0';
     takeResult(out);
-    pushTape(lhsText, opGlyph(op), rhsText, display_);
   }
 
   // `200 + 10 %` is 220 and `200 x 10 %` is 20, because percent reads the
@@ -437,16 +425,6 @@ class Engine {
     std::snprintf(pending_, sizeof(pending_), "%s %s", lhs, opGlyph(pendingOp_));
   }
 
-  void pushTape(const char* lhs, const char* op, const char* rhs, const char* result) {
-    const int slot = (tapeStart_ + tapeCount_) % kTapeMax;
-    std::snprintf(tape_[slot], kTextMax * 2, "%s %s %s = %s", lhs, op, rhs, result);
-    if (tapeCount_ < kTapeMax) {
-      ++tapeCount_;
-    } else {
-      tapeStart_ = (tapeStart_ + 1) % kTapeMax;
-    }
-  }
-
   void refresh() {
     if (error_) return;
     if (entryLive_) {
@@ -472,9 +450,6 @@ class Engine {
   char entry_[kTextMax] = {};
   char display_[kTextMax * 2] = {};
   char pending_[kTextMax * 2] = {};
-  char tape_[kTapeMax][kTextMax * 2] = {};
-  int tapeStart_ = 0;
-  int tapeCount_ = 0;
   int entryDigits_ = 0;
   bool entryLive_ = false;
   bool entryHasDot_ = false;

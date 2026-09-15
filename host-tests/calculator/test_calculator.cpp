@@ -381,17 +381,6 @@ void testErrorsStopEverythingButClear() {
   CHECK(!e.hasError());
 }
 
-void testTheTapeRecordsFinishedSums() {
-  Engine e;
-  run(e, "12+34=");
-  type(e, "250x4=");
-  CHECK(e.tapeCount() == 2);
-  CHECK_TEXT(e.tapeLine(0), "12 + 34 = 46");
-  // The second sum starts from scratch: after =, a digit opens a new number
-  // rather than extending the result, so 250 is an operand and not 46250.
-  CHECK_TEXT(e.tapeLine(1), "250 \xC3\x97 4 = 1000");
-}
-
 // --- the pad ----------------------------------------------------------------
 
 PadGeom geom() { return padGeometry(480, 800); }
@@ -589,7 +578,6 @@ int main(int argc, char** argv) {
   testNegateAppliesToWhatIsOnScreen();
   testTheSequencesNobodyMeansToPress();
   testErrorsStopEverythingButClear();
-  testTheTapeRecordsFinishedSums();
   testEveryKeyIsBigEnoughToHit();
   testEveryKeyAnswersOverItsWholeFace();
   testTheGapsBetweenKeysAnswerNothing();
