@@ -14,6 +14,7 @@
 #include "ShelfState.h"
 #include "activities/browser/OpdsBookBrowserActivity.h"
 #include "battleship/BattleshipActivity.h"
+#include "calculator/CalculatorActivity.h"
 #include "checkers/CheckersActivity.h"
 #include "chess/ChessActivity.h"
 #include "connectfour/ConnectFourActivity.h"
@@ -79,6 +80,7 @@ constexpr shelf::Item kApps[] = {
     {"INSTAPAPER", &icon_instapaper_32, &InstapaperActivity::create},
     {"WALLPAPERS", &icon_wallpapers_32, &WallpapersActivity::create},
     {"WIKIPEDIA", &icon_wikipedia_32, &WikipediaActivity::create},
+    {"CALCULATOR", &icon_calculator_32, &CalculatorActivity::create},
 };
 
 // The two rows Home grows, in reading order. Titles are Title Case because
