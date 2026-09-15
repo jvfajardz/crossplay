@@ -210,6 +210,8 @@ an X4 Pro.** `docs/open-items.md` has this open: the SDK says "0.3-2 s" and that
 is the whole of our knowledge. A calculator is the app that cares most. The
 existing evidence that it is tolerable is the on-screen QWERTY keyboard people
 already type Wi-Fi passwords on at 46px keys; these are twice that. One thing
-works in our favour: the pad's hit table never changes between frames, so
-`RevealedInteractions`' "an unchanged table always routes" rule keeps taps alive
-through a repaint.
+works in our favour, and it is NOT the reveal gate, whatever this page said
+before: that rule governs the interaction TABLE, and this screen registers
+nothing in it -- the pad is hit-tested against geometry. What actually keeps
+rapid taps alive is that the geometry cannot change between frames, so a tap
+landing during a repaint lands on the key it would have landed on before it.
