@@ -603,7 +603,13 @@ void printLabelTable() {
   // this is a deterministic walk over every key, emitting every DISTINCT string
   // the engine put on screen along the way.
   Engine engine;
-  static char seen[4096][40];
+  // Sized to the SOURCE buffer, not to the sixteen characters the engine
+  // promises. The promise is what this walk exists to check, so sizing against
+  // it would be assuming the answer -- and GCC says so out loud where clang does
+  // not: -Wformat-truncation reads Engine::display()'s real capacity and refuses
+  // a snprintf that could cut it. Green here and red on CI, which is the gap
+  // this fork has been caught by before.
+  static char seen[4096][kTextMax * 2];
   static int seenCut[4096];
   int seenCount = 0;
   // The cut is captured WITH the string, because which one a string is drawn in
@@ -617,7 +623,7 @@ void printLabelTable() {
       if (std::strcmp(seen[i], text) == 0) return;
     }
     seenCut[seenCount] = cut;
-    std::snprintf(seen[seenCount++], 40, "%s", text);
+    std::snprintf(seen[seenCount++], sizeof(seen[0]), "%s", text);
   };
   static const Key kEvery[] = {
       Key::D0,  Key::D1,     Key::D2,      Key::D3,     Key::D4,       Key::D5,         Key::D6,
