@@ -13,6 +13,22 @@
 
 namespace calc {
 
+// What the display can ever be asked to draw.
+//
+// Not a limit imposed on the display: a limit imposed on the ENGINE, which is
+// Sixteen characters is what the smallest of
+// the four number cuts clears on this panel -- sixteen times Jersey 26's widest
+// glyph is 432px of the 448 an app owns -- so a result that obeys this can never
+// be drawn past its box, whatever it is.
+//
+// Sixteen rather than twelve because of the EXPONENT form: a sign, a digit, a
+// point, nine more digits and e-99 is sixteen characters, and at twelve the
+// mantissa was cut to seven digits -- 9999999999 x 9999999999 came out as
+// "1e+20", arithmetically true and useless to read. Ten significant digits (the
+// engine's, and a normal pocket calculator's) needs twelve characters in FIXED
+// form and sixteen in exponent form.
+constexpr int kMaxDisplayChars = 16;
+
 struct Layout {
   uint8_t cols = 0;
   uint8_t rows = 0;

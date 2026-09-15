@@ -217,7 +217,11 @@ you ask it to, from the community mirror at
 [Eyefyre/NYT-Connections-Answers](https://github.com/Eyefyre/NYT-Connections-Answers).
 Trivia's questions are built from the community
 [Jeopardy! clue dataset](https://github.com/jwolle1/jeopardy_clue_dataset).
-Type is Jersey 25 and Instrument Serif, both SIL OFL.
+Type is Jersey 25 and Instrument Serif, both SIL OFL. The Calculator's
+arithmetic is IBM's [decNumber](https://speleotrove.com/decimal/decnumber.html),
+under the ICU License (ICU 1.8.1 and later), vendored at `lib/decNumber` with
+its notice; it is there so the calculator answers 0.1 + 0.2 - 0.3 with zero,
+which a binary one cannot.
 
 Where a game on the shelf carries the name of a published game, that name is
 its owner's trademark and is used to say what the thing is; game mechanics are

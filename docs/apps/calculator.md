@@ -1,63 +1,61 @@
 # Calculator
 
-One calculator, five finished looks. What is settled, what is still Mario's, and
-the things that had to be fixed at the source rather than styled around.
+A calculator for the X4 Pro, in the TOYBOX look. What is settled, and the things
+that had to be fixed at the source rather than styled around.
 
-## Two rules that are not up for discussion
+## TOYBOX, and the four that were deleted
 
-**No rounded corners.** Mario, 2026-09-15. A radius is not one of five looks, it
-is a house style applied to all five, and it was flattening the differences the
-five exist to show. What separates them now is border weight, fill, lattice,
-inset and typeface.
+Mario chose TOYBOX on 2026-09-15 out of five looks rendered side by side. The
+other four -- INSTRUMENT, NIGHT, SWISS, LEDGER -- and the `Skin` struct that
+carried them are gone in the same commit, along with the Ubuntu Bold and Noto
+Serif cuts only they used. A variant macro that survives a decision is a second
+design nobody maintains, and those two faces were 450KB of flash for a look
+nothing draws.
 
-**No unexplained space.** Every vertical band on the screen is DERIVED from a
-cut metric rather than picked: `displayHeightFor` is the pending line's own line
-height, plus the number's cap height and its air, plus the rule, plus a tape's
-lines if it has them. Nothing is left over at the end.
+Two rules from that pass are settled and stay:
+
+**No rounded corners.** Mario's call, twice.
+
+**No unexplained space.** Every vertical band is DERIVED from a cut metric, not
+picked: `displayHeight()` is the pending line's own line height, plus the
+number's cap height and its air, plus the rule. Nothing is left over.
 
 That is not tidiness, it is the fix for a real defect. In the first pass every
-skin carried a guessed display height, the number was pinned to the bottom of
-it, and the remainder came out as a band of empty panel over every result --
+skin carried a guessed display height, the number was pinned to the bottom of it,
+and the remainder came out as a band of empty panel over every result --
 different in each skin, explained by nothing. `host-tests/calculator` now refuses
-any skin that leaves more than one pixel a row unaccounted for under its pad, and
+a layout that leaves more than one pixel a row unaccounted for, and
 `label_fit.py` checks `CalcCutMetrics.h` against the real font headers, so a
-regenerated cut cannot move a band without going red.
+regenerated cut cannot move a band without going red. The derivation earned
+itself immediately: LEDGER asked for four tape lines, which left 55px key rows
+against a 61px touch floor, and the suite said so.
 
-The derivation immediately earned itself: LEDGER asked for four tape lines, which
-left 55px key rows against a 61px touch floor, and the suite said so. A guessed
-height would have taken that space out of the pad silently.
+## Nothing can overflow, and the bound is at the source
 
-## The pad
+Mario, 2026-09-15: *"I NEVER want to see overlapping text with the borders or
+numbers that dont read nicely."*
 
-Portrait, 480x800. Every skin lays out from `calc::bodyFor`, which is chrome
-height plus one gutter down from the panel's top and one margin in from each
-side. The arrangement is the iPhone's -- the pad the most hands already know --
-with two changes every desk calculator also makes: **DEL** rather than a swipe
-to lose a digit (Casio spells it exactly that way), and a plus-minus key in the
-corner where the iPhone puts a double-width zero, so the grid is uniform and a
-lattice skin has something to tile.
+A display cannot promise that by being careful about what it draws. It has to be
+impossible, and the only place it can be made impossible is where the string is
+produced.
 
-```
-AC   DEL   %   /        20 keys, 4 x 5
-7    8     9   x
-4    5     6   -
-1    2     3   +
-+/-  0     .   =
-```
+**`kMaxDisplayChars` is 12**, and it is a limit on the ENGINE. Twelve characters
+is what the smallest of the three number cuts clears on this panel: twelve times
+Jersey 34's widest glyph is 420px of the 448 an app owns. A result that obeys it
+cannot be drawn past its box, whatever it is. Twelve characters is a sign, ten
+digits and a point -- which is why the engine carries **ten** significant digits
+and not twelve. Ten is a normal pocket calculator; TI's display is ten.
 
-Measured key sizes, at the panel's 220ppi:
+Above that bound the display picks the largest of three cuts the string actually
+fits in -- 56, 44, 34 -- measured through the renderer's own advance widths
+rather than counted, because **Jersey's digits are not tabular**: a `1` is 37px
+against a `0` at 57px in the 56 cut, so counting characters would step the number
+down a size it did not need and every result would read smaller than it could.
 
-| skin       | key px  | key mm      | face            | what carries it                |
-| ---------- | ------- | ----------- | --------------- | ------------------------------ |
-| TOYBOX     | 103x98  | 11.9 x 11.3 | Jersey 25       | black band, border weight      |
-| INSTRUMENT | 113x105 | 13.0 x 12.1 | Ubuntu Bold     | tiling keys, filled column     |
-| NIGHT      | 101x96  | 11.7 x 11.1 | Ubuntu Bold     | inverted ground, filled column |
-| SWISS      | 110x113 | 12.7 x 13.0 | Jersey 25       | hairline lattice, no borders   |
-| LEDGER     | 100x68  | 11.5 x 7.9  | Noto Serif Bold | serif, three-line tape         |
-
-Apple's minimum touch target is 44pt, about **61px** here, and
-`host-tests/calculator` asserts that floor for every skin: a look is not allowed
-to cost reachability.
+Three rungs and not five, because the worst case is bounded: a result never lands
+in a label cut. `label_fit.py` proves it over the strings the ENGINE actually
+emits when the suite drives it to its limits, rather than over samples somebody
+thought of.
 
 ## The symbols are type now, and that was the whole problem
 
@@ -79,18 +77,17 @@ all -- Ubuntu Bold draws it 103px wide at 26px, in a 103px key. `labelFontFor`
 picks by label length, structurally, so the host gate can resolve the same face
 the panel will.
 
-What each face can spell decides which skin gets which key: Jersey has no
-U+00B1, so the skins set in it print **+/-** and the others print **±**. Both
-are real calculator conventions; an invisible key is not.
+Jersey has no U+00B1, so the sign key prints **+/-**, which is the spelling a
+keyboard-era calculator uses. An invisible key is not a convention.
 
 ## The gate that catches a label before a person does
 
 `host-tests/calculator/label_fit.py` measures every key label, in the cut its
 skin resolves, against the cell that skin produces. A host test cannot parse a
 font header and a screenshot only shows the skin somebody photographed, so this
-is the only thing that can see the failure. It found NIGHT's DEL within a pixel
-and a half of its border on both sides, and LEDGER's **fifteen pixels wider than
-its key** -- in a skin whose render nobody had looked at yet.
+is the only thing that can see the failure. It found Ubuntu Bold's DEL within a pixel and a half of its border on both sides,
+and Noto Serif's **fifteen pixels wider than its key** -- in a look whose render
+nobody had looked at yet.
 
 It checks the invisible half too: a codepoint the face has no glyph for is
 reported rather than silently costing zero width.
@@ -128,12 +125,7 @@ calculators are commonly wrong. All are pinned.
 
 ## What is NOT settled
 
-### 1. Which skin
-
-Five are built behind `-DCALC_SKIN=n` and rendered from the simulator. Four go
-away in the commit that picks one, along with the faces only they used.
-
-### 2. The near-zero residue: double, or decimal?
+### 1. The near-zero residue: double, or decimal?
 
 Twelve-digit rounding fixes every case where the error is small against the
 result and **none** where the result itself is near zero:
@@ -148,7 +140,7 @@ measured on ESP32-S3, no exceptions, no allocation at our precision).
 `testTheKnownLimitOfBinaryArithmetic` pins the residue **as a test**, so if that
 test ever has to change the change is decNumber and not a bigger rounding.
 
-### 3. Percent on x and /
+### 2. Percent on x and /
 
 `500 x 5 %` is **25** on iOS and Casio and **12500** on Windows. The engine does
 the iOS thing, and `testPercentReadsThePendingOperator` is the one line that

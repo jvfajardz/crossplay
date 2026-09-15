@@ -47,30 +47,21 @@ cut() {
   echo "wrote $OUT/$name.h ($(wc -c < "$OUT/$name.h" | tr -d ' ') bytes)"
 }
 
-# Three cuts per face, not two. A calculator sets its WORD keys smaller than its
-# digits -- look at any of them -- and here that is also the only way "DEL" fits
-# a key at all: Ubuntu Bold draws it 103px wide at 26px, in a 103px key. The
-# small cut is picked structurally, by label length, so the host gate can resolve
-# the same face the panel will.
+# Five cuts, all Jersey 25.
+#
+# Two for the pad: a calculator sets its WORD keys smaller than its digits, and
+# labelFontFor picks between them structurally, by label length, so the host gate
+# resolves the same face the panel will.
+#
+# Four for the display, which steps DOWN as a result gets longer. Four and not
+# one because one is a cliff, and no more than four because the result's width is
+# BOUNDED -- sixteen characters, set so the SMALLEST of them still clears the
+# panel -- so the rungs are provably enough and a result never lands in a label
+# cut, which matters because the label cut is the only one with letters in it and
+# the number cuts have none.
 cut calc_jersey_28 28 "$WORK/jersey25.ttf" "U+0020-007E,$MATH"
 cut calc_jersey_20 20 "$WORK/jersey25.ttf" "U+0020-007E,$MATH"
 cut calc_jersey_56 56 "$WORK/jersey25.ttf" "$NUMS,$MATH"
 cut calc_jersey_44 44 "$WORK/jersey25.ttf" "$NUMS,$MATH"
 cut calc_jersey_34 34 "$WORK/jersey25.ttf" "$NUMS,$MATH"
-
-# Ubuntu Bold: a grotesque with every math sign including the radical, and
-# --force-autohint so the stems survive 1-bit at small sizes.
-UB="$SRCDIR/Ubuntu/Ubuntu-Bold.ttf"
-cut calc_ubuntu_26 26 "$UB" "U+0020-007E,$MATH" --force-autohint
-cut calc_ubuntu_18 18 "$UB" "U+0020-007E,$MATH" --force-autohint
-cut calc_ubuntu_56 56 "$UB" "$NUMS,$MATH" --force-autohint
-cut calc_ubuntu_44 44 "$UB" "$NUMS,$MATH" --force-autohint
-cut calc_ubuntu_34 34 "$UB" "$NUMS,$MATH" --force-autohint
-
-# Noto Serif Bold: the editorial voice, for the skin that is not a machine.
-NS="$SRCDIR/NotoSerif/NotoSerif-Bold.ttf"
-cut calc_serif_26 26 "$NS" "U+0020-007E,$MATH" --force-autohint
-cut calc_serif_16 16 "$NS" "U+0020-007E,$MATH" --force-autohint
-cut calc_serif_56 56 "$NS" "$NUMS,$MATH" --force-autohint
-cut calc_serif_44 44 "$NS" "$NUMS,$MATH" --force-autohint
-cut calc_serif_34 34 "$NS" "$NUMS,$MATH" --force-autohint
+cut calc_jersey_26 26 "$WORK/jersey25.ttf" "$NUMS,$MATH"

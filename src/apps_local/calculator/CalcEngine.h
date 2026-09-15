@@ -2,109 +2,107 @@
 
 // The calculator itself: what a key press does to the numbers.
 //
-// Immediate execution, the way every pocket calculator since the 1970s works
-// and the way four of the five candidate pads expect: an operator key completes
-// the sum so far and shows it, rather than waiting for a closing bracket. The
-// EXPRESSION pad is the one that does not, and it needs a parser this does not
-// contain.
+// Immediate execution, the way every pocket calculator since the 1970s works: an
+// operator key completes the sum so far and shows it, rather than waiting for a
+// closing bracket.
 //
-// Freestanding C++17: <cmath>, <cstdio>, <cstring> and nothing else, so
-// host-tests can build it with no panel and no Arduino. Everything here is
-// somewhere a calculator is commonly WRONG, which is why it is one file with
-// one test suite rather than sprinkled through an activity:
+// THE ARITHMETIC IS DECIMAL, NOT BINARY. IBM decNumber, vendored at
+// lib/decNumber, ICU licence. That is the whole reason this file is not fifty
+// lines of `double`:
 //
-//   * 0.1 + 0.2 must print 0.3. Binary doubles say 0.30000000000000004, and
-//     the fix is not decimal arithmetic -- it is printing at twelve significant
-//     digits when the double carries about seventeen. That is what iOS and
-//     Windows both do, and it is why their calculators look exact.
+//   0.1 + 0.2        binary double, rounded to 12 digits:  0.3
+//   0.1 + 0.2 - 0.3  binary double, rounded to 12 digits:  5.55111512313e-17
+//
+// Rounding the display hides the first and CANNOT hide the second, because there
+// the error is the whole answer. Casio and TI show 0 because their arithmetic is
+// decimal (BCD), not because their displays are cleverer. Ours is decimal for
+// the same reason, and it costs about 25KB of flash.
+//
+// Everything else here is somewhere calculators are commonly wrong, which is why
+// it is one file with one suite rather than sprinkled through an activity:
+//
 //   * `200 + 10 %` is 220 and `200 x 10 %` is 20. Percent is not one operation;
 //     it reads the pending operator. Getting this wrong is the single most
 //     common calculator bug.
-//   * `2 + 3 = = =` is 5, 8, 11. The equals key repeats the last operator and
-//     the last operand, forever.
+//   * `2 + 3 = = =` is 5, 8, 11. Equals repeats the last operator and operand.
 //   * Two operators in a row replace, they do not stack.
-//   * Divide by zero says so and then refuses every key but clear, instead of
-//     showing `inf` or a blank.
+//   * Divide by zero says so and then refuses every key but clear.
+//   * Nothing the display can be handed is longer than kMaxDisplayChars.
 
-#include <cmath>
+#include <DecNumber.h>
+
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 
+#include "CalcFormat.h"
 #include "CalcKeys.h"
+#include "CalcLayout.h"
 
 namespace calc {
 
-// Twelve significant digits. The double holds about seventeen; showing all of
-// them is what puts 0.30000000000000004 on the panel. Twelve is wide enough
-// that a real sum is never silently rounded and narrow enough that the number
-// fits the display cut without stepping down two sizes.
-constexpr int kSignificantDigits = 12;
-// What a person may type. Not the same number: the display can show a
-// twelve-digit RESULT, and letting someone type thirteen digits that then round
-// is worse than refusing the thirteenth keypress.
-constexpr int kMaxEntryDigits = 12;
-// What a result carries once it goes to an exponent. See formatNumber.
-constexpr int kScientificDigits = 9;
+// TWO precisions, and the difference between them is what makes this feel like a
+// calculator rather than like arithmetic.
+//
+// Ten is what the display SHOWS -- a normal pocket calculator; TI's is ten -- and
+// it is what kMaxDisplayChars allows in fixed form: a sign, ten digits and a
+// point. Sixteen is what the arithmetic WORKS in. The six extra are guard digits,
+// and they are the reason (1 / 3) x 3 reads 1:
+//
+//   at ten working digits   0.3333333333 x 3 = 0.9999999999   shown as 0.9999999999
+//   at sixteen, shown at 10 0.3333333333333333 x 3 = 0.9999999999999999 -> 1
+//
+// Casio and TI both carry hidden guard digits for exactly this. Without them a
+// decimal calculator is still wrong, just wrong in a different place than a
+// binary one.
+constexpr int kSignificantDigits = 10;
+constexpr int kWorkingDigits = 16;
+// Never let an operand carry more digits than the working precision. decNumber
+// 3.68 has a published erratum where add and subtract can be off by one in the
+// last digit when an operand is LONGER than the context precision; capping the
+// keypad is what keeps that unreachable rather than unlikely.
+constexpr int kMaxEntryDigits = kSignificantDigits;
+static_assert(kMaxEntryDigits <= kWorkingDigits, "an operand longer than the working precision hits an erratum");
+// Bounded so an exponent is at most three characters. A pocket calculator errors
+// past its exponent range rather than showing a number nobody asked for, and a
+// bounded range is also what keeps the display's worst case provable.
+constexpr int kMaxExponent = 99;
 constexpr size_t kTextMax = 32;
-
-// Twelve-significant-digit rendering, trailing zeros and all, with the C
-// library doing the hard part. %g already picks fixed or scientific by
-// magnitude and strips trailing zeros; what it does not do is normalise the
-// exponent width, which differs between platforms (e+20 against e+020).
-inline void formatNumber(const double v, char* out, const size_t n) {
-  if (!out || n == 0) return;
-  if (std::isnan(v) || std::isinf(v)) {
-    std::snprintf(out, n, "Error");
-    return;
-  }
-  // -0 is a real double and reads as a bug on a calculator panel.
-  const double value = (v == 0.0) ? 0.0 : v;
-  std::snprintf(out, n, "%.*g", kSignificantDigits, value);
-  char* e = std::strchr(out, 'e');
-  if (!e) return;
-  // Gone scientific: redo it at nine. The twelve exist to hide binary noise in
-  // the FIXED form, where a wrong seventeenth digit becomes 0.30000000000000004;
-  // beside an exponent they only make the string wider, and every calculator
-  // that shows an exponent shows fewer digits in front of it.
-  std::snprintf(out, n, "%.*g", kScientificDigits, value);
-  e = std::strchr(out, 'e');
-  if (!e) return;
-  const bool negExp = e[1] == '-';
-  const char* digits = e + ((e[1] == '+' || e[1] == '-') ? 2 : 1);
-  while (digits[0] == '0' && digits[1] != '\0') ++digits;
-  char tail[kTextMax];
-  std::snprintf(tail, sizeof(tail), "e%s%s", negExp ? "-" : "", digits);
-  std::snprintf(e, n - static_cast<size_t>(e - out), "%s", tail);
-}
 
 class Engine {
  public:
-  Engine() { clearAll(); }
+  Engine() {
+    decContextDefault(&ctx_, DEC_INIT_BASE);
+    ctx_.digits = kWorkingDigits;
+    ctx_.emax = kMaxExponent;
+    ctx_.emin = -kMaxExponent;
+    // Half UP, not half EVEN. Bankers' rounding is right for accounting and
+    // wrong for a calculator: a person who types 0.5 and rounds expects 1.
+    ctx_.round = DEC_ROUND_HALF_UP;
+    // Never trap, and this one is not tidiness: DEC_INIT_BASE leaves
+    // traps = DEC_Errors, and decContextSetStatus then calls raise(SIGFPE). Left
+    // alone, the first division by zero aborts the firmware. Status bits are
+    // also the whole reason decNumber suits a build with exceptions off.
+    ctx_.traps = 0;
+    clearAll();
+  }
 
   // --- what the screen asks -------------------------------------------------
 
-  // The big number.
   const char* display() const { return display_; }
-  // The sum so far, small, above it: "12 +" while an operator is pending.
   const char* pending() const { return pending_; }
   bool hasError() const { return error_; }
-  // The finished sums, newest last. Only the TAPE pad draws these; the others
-  // record them anyway, because which pad is on screen is not the engine's
-  // business.
   int tapeCount() const { return tapeCount_; }
   const char* tapeLine(const int i) const {
     if (i < 0 || i >= tapeCount_) return "";
     return tape_[(tapeStart_ + i) % kTapeMax];
   }
-  double value() const { return entryLive_ ? entryValue() : acc_; }
 
   // --- what the pad does ----------------------------------------------------
 
   void press(const Key k) {
-    // An error is a wall: only clear gets through. Letting a digit land on top
-    // of "Cannot divide by zero" is how a calculator starts lying quietly.
+    // An error is a wall: only clear gets through. Letting a digit land on top of
+    // "DIVIDE BY 0" is how a calculator starts lying quietly.
     if (error_ && k != Key::ClearAll && k != Key::ClearEntry) return;
 
     if (isDigit(k)) return pressDigit(digitValue(k));
@@ -128,80 +126,73 @@ class Engine {
         return clearEntry();
       case Key::Backspace:
         return pressBackspace();
-      case Key::Sqrt:
-        return pressUnary(k);
-      case Key::Square:
-        return pressUnary(k);
-      case Key::Reciprocal:
-        return pressUnary(k);
-      case Key::Abs:
-        return pressUnary(k);
-      case Key::Ln:
-        return pressUnary(k);
-      case Key::Log10:
-        return pressUnary(k);
-      case Key::Exp10:
-        return pressUnary(k);
-      case Key::Sin:
-        return pressUnary(k);
-      case Key::Cos:
-        return pressUnary(k);
-      case Key::Tan:
-        return pressUnary(k);
-      case Key::Factorial:
-        return pressUnary(k);
-      case Key::Pi:
-        return pressConstant(3.14159265358979323846);
-      case Key::Euler:
-        return pressConstant(2.71828182845904523536);
       default:
-        return;  // 2nd, ANS, brackets: the EXPRESSION pad's, not this one
+        return;
     }
   }
 
   void clearAll() {
-    entry_[0] = '0';
-    entry_[1] = '\0';
-    entryDigits_ = 0;
-    entryLive_ = false;
-    entryHasDot_ = false;
-    entryNegative_ = false;
-    acc_ = 0.0;
+    resetEntry();
+    decNumberZero(&acc_);
+    decNumberZero(&repeatOperand_);
     pendingOp_ = Key::None;
     repeatOp_ = Key::None;
-    repeatOperand_ = 0.0;
     error_ = false;
     pending_[0] = '\0';
+    ctx_.status = 0;
     refresh();
   }
 
  private:
   static constexpr int kTapeMax = 8;
 
-  void clearEntry() {
-    error_ = false;
+  void resetEntry() {
     entry_[0] = '0';
     entry_[1] = '\0';
     entryDigits_ = 0;
     entryLive_ = false;
     entryHasDot_ = false;
     entryNegative_ = false;
+  }
+
+  void clearEntry() {
+    error_ = false;
+    ctx_.status = 0;
+    resetEntry();
     refresh();
   }
 
-  double entryValue() const {
-    const double v = std::atof(entry_);
-    return entryNegative_ ? -v : v;
+  // The number on screen: what is being typed, or the accumulator when nothing
+  // is. One question, one answer, so no branch can form a second opinion about
+  // which of the two the user is looking at.
+  void currentValue(decNumber* out) const {
+    if (!entryLive_) {
+      decNumberCopy(out, &acc_);
+      return;
+    }
+    char text[kTextMax + 2];
+    std::snprintf(text, sizeof(text), "%s%s", entryNegative_ ? "-" : "", entry_);
+    decContext scratch = ctx_;
+    decNumberFromString(out, text, &scratch);
   }
 
-  void setEntryFrom(const double v) {
-    formatNumber(v, entry_, sizeof(entry_));
-    entryNegative_ = entry_[0] == '-';
-    if (entryNegative_) std::memmove(entry_, entry_ + 1, std::strlen(entry_));
-    entryHasDot_ = std::strchr(entry_, '.') != nullptr;
-    entryDigits_ = 0;
-    for (const char* p = entry_; *p; ++p)
-      if (*p >= '0' && *p <= '9') ++entryDigits_;
+  void takeResult(const decNumber& value) {
+    decNumberCopy(&acc_, &value);
+    entryLive_ = false;
+    refresh();
+  }
+
+  // decNumber never throws; it sets bits. Reading and clearing them in one place
+  // is what keeps a stale bit from a sum three presses ago failing the next one.
+  bool checkStatus() {
+    const uint32_t status = ctx_.status;
+    ctx_.status = 0;
+    if (status & DEC_Division_by_zero) return fail("DIVIDE BY 0");
+    if (status & (DEC_Overflow | DEC_Underflow)) return fail("OVERFLOW");
+    // Zero over zero is DIVISION_UNDEFINED, a different bit from a division by a
+    // zero divisor, and an invalid operation rather than an infinity.
+    if (status & (DEC_Invalid_operation | DEC_Conversion_syntax | DEC_Division_undefined)) return fail("BAD INPUT");
+    return true;
   }
 
   void pressDigit(const int d) {
@@ -212,9 +203,8 @@ class Engine {
       entryNegative_ = false;
       entryLive_ = true;
     }
-    // Refusing the thirteenth digit rather than accepting and rounding it: a
-    // key that silently does nothing is better than a number that silently
-    // changes.
+    // Refusing the eleventh digit rather than accepting and rounding it: a key
+    // that silently does nothing is better than a number that silently changes.
     if (entryDigits_ >= kMaxEntryDigits) return;
     if (entryDigits_ == 0 && d == 0 && !entryHasDot_) {
       std::snprintf(entry_, sizeof(entry_), "0");
@@ -250,9 +240,9 @@ class Engine {
   void pressBackspace() {
     // Only the number being typed. Backspacing a RESULT would have to undo the
     // sum that produced it, and there is no sensible answer to what `5` means
-    // after you back a digit off 25 that arrived from 5 x 5.
+    // after you back a digit off the 25 that arrived from 5 x 5.
     if (!entryLive_) return;
-    size_t len = std::strlen(entry_);
+    const size_t len = std::strlen(entry_);
     if (len == 0) return;
     if (entry_[len - 1] == '.') entryHasDot_ = false;
     if (entry_[len - 1] >= '0' && entry_[len - 1] <= '9' && entryDigits_ > 0) --entryDigits_;
@@ -267,45 +257,36 @@ class Engine {
   }
 
   void pressNegate() {
-    if (entryLive_ || pendingOp_ == Key::None) {
+    if (entryLive_) {
       entryNegative_ = !entryNegative_;
-      if (!entryLive_) {
-        acc_ = -acc_;
-        setEntryFrom(acc_);
-      }
     } else {
-      entryNegative_ = !entryNegative_;
+      // CopyNegate, not Minus: Minus rounds under the context, and flipping a
+      // sign is not an operation that should be able to change a digit.
+      decNumberCopyNegate(&acc_, &acc_);
     }
     refresh();
   }
 
-  void pressConstant(const double v) {
-    setEntryFrom(v);
-    entryLive_ = true;
-    refresh();
-  }
-
-  bool apply(const Key op, const double lhs, const double rhs, double& out) {
+  bool apply(const Key op, const decNumber& lhs, const decNumber& rhs, decNumber* out) {
+    ctx_.status = 0;
     switch (op) {
       case Key::Add:
-        out = lhs + rhs;
+        decNumberAdd(out, &lhs, &rhs, &ctx_);
         break;
       case Key::Sub:
-        out = lhs - rhs;
+        decNumberSubtract(out, &lhs, &rhs, &ctx_);
         break;
       case Key::Mul:
-        out = lhs * rhs;
+        decNumberMultiply(out, &lhs, &rhs, &ctx_);
         break;
       case Key::Div:
-        if (rhs == 0.0) return fail("Cannot divide by zero");
-        out = lhs / rhs;
+        decNumberDivide(out, &lhs, &rhs, &ctx_);
         break;
       default:
-        out = rhs;
+        decNumberCopy(out, &rhs);
         break;
     }
-    if (std::isnan(out) || std::isinf(out)) return fail("Overflow");
-    return true;
+    return checkStatus();
   }
 
   void pressOperator(const Key op) {
@@ -317,148 +298,86 @@ class Engine {
       refresh();
       return;
     }
-    const double rhs = entryLive_ ? entryValue() : acc_;
+    decNumber rhs;
+    currentValue(&rhs);
     if (pendingOp_ == Key::None) {
-      acc_ = rhs;
+      decNumberCopy(&acc_, &rhs);
     } else {
-      double out = 0.0;
-      if (!apply(pendingOp_, acc_, rhs, out)) return;
-      acc_ = out;
+      decNumber out;
+      if (!apply(pendingOp_, acc_, rhs, &out)) return;
+      decNumberCopy(&acc_, &out);
     }
     pendingOp_ = op;
     entryLive_ = false;
-    setEntryFrom(acc_);
     repeatOp_ = Key::None;
     writePending();
     refresh();
   }
 
   void pressEquals() {
-    double rhs;
+    decNumber rhs;
     Key op;
     if (pendingOp_ != Key::None) {
-      rhs = entryLive_ ? entryValue() : acc_;
+      currentValue(&rhs);
       op = pendingOp_;
     } else if (repeatOp_ != Key::None) {
       // `2 + 3 =` then `=` again: repeat the operator AND the operand.
-      rhs = repeatOperand_;
+      decNumberCopy(&rhs, &repeatOperand_);
       op = repeatOp_;
     } else {
-      entryLive_ = false;
-      acc_ = entryValue();
+      decNumber value;
+      currentValue(&value);
       pending_[0] = '\0';
-      refresh();
+      takeResult(value);
       return;
     }
     char lhsText[kTextMax];
     char rhsText[kTextMax];
-    formatNumber(acc_, lhsText, sizeof(lhsText));
-    formatNumber(rhs, rhsText, sizeof(rhsText));
-    double out = 0.0;
-    if (!apply(op, acc_, rhs, out)) return;
-    acc_ = out;
+    writeNumber(acc_, lhsText, sizeof(lhsText));
+    writeNumber(rhs, rhsText, sizeof(rhsText));
+    decNumber out;
+    if (!apply(op, acc_, rhs, &out)) return;
+    decNumberCopy(&repeatOperand_, &rhs);
     repeatOp_ = op;
-    repeatOperand_ = rhs;
     pendingOp_ = Key::None;
-    entryLive_ = false;
-    setEntryFrom(acc_);
     pending_[0] = '\0';
-    char result[kTextMax];
-    formatNumber(acc_, result, sizeof(result));
-    pushTape(lhsText, opGlyph(op), rhsText, result);
-    refresh();
+    takeResult(out);
+    pushTape(lhsText, opGlyph(op), rhsText, display_);
   }
 
   // `200 + 10 %` is 220 and `200 x 10 %` is 20, because percent reads the
-  // pending operator: additive operators want a percentage OF the running
-  // total, multiplicative ones want a plain hundredth. This is the rule iOS,
-  // Windows and every desk calculator share, and it is the one most
-  // reimplementations get wrong.
+  // pending operator: additive operators want a percentage OF the running total,
+  // multiplicative ones want a plain hundredth. This is the rule iOS and Casio
+  // share. Windows differs on the multiplicative case (500 x 5 % is 12500
+  // there); if that is wanted, this is the one branch that changes.
   void pressPercent() {
-    const double x = entryLive_ ? entryValue() : acc_;
-    double v;
+    decNumber x;
+    currentValue(&x);
+    decNumber hundred;
+    decNumberFromString(&hundred, "100", &ctx_);
+    decNumber out;
+    ctx_.status = 0;
+    decNumberDivide(&out, &x, &hundred, &ctx_);
+    if (!checkStatus()) return;
     if (pendingOp_ == Key::Add || pendingOp_ == Key::Sub) {
-      v = acc_ * x / 100.0;
-    } else {
-      v = x / 100.0;
+      decNumber scaled;
+      ctx_.status = 0;
+      decNumberMultiply(&scaled, &acc_, &out, &ctx_);
+      if (!checkStatus()) return;
+      decNumberCopy(&out, &scaled);
     }
-    setEntryFrom(v);
+    // The percentage becomes the number ON SCREEN, still typed, so the pending
+    // operator can then consume it. Committing it to the accumulator instead
+    // would throw away the sum it is a percentage of.
+    writeNumber(out, entry_, sizeof(entry_));
+    entryNegative_ = entry_[0] == '-';
+    if (entryNegative_) std::memmove(entry_, entry_ + 1, std::strlen(entry_));
+    entryHasDot_ = std::strchr(entry_, '.') != nullptr;
+    entryDigits_ = 0;
+    for (const char* p = entry_; *p; ++p) {
+      if (*p >= '0' && *p <= '9') ++entryDigits_;
+    }
     entryLive_ = true;
-    refresh();
-  }
-
-  void pressUnary(const Key k) {
-    const double x = entryLive_ ? entryValue() : acc_;
-    double v = 0.0;
-    switch (k) {
-      case Key::Sqrt:
-        if (x < 0.0) {
-          fail("Invalid input");
-          return;
-        }
-        v = std::sqrt(x);
-        break;
-      case Key::Square:
-        v = x * x;
-        break;
-      case Key::Reciprocal:
-        if (x == 0.0) {
-          fail("Cannot divide by zero");
-          return;
-        }
-        v = 1.0 / x;
-        break;
-      case Key::Abs:
-        v = std::fabs(x);
-        break;
-      case Key::Ln:
-        if (x <= 0.0) {
-          fail("Invalid input");
-          return;
-        }
-        v = std::log(x);
-        break;
-      case Key::Log10:
-        if (x <= 0.0) {
-          fail("Invalid input");
-          return;
-        }
-        v = std::log10(x);
-        break;
-      case Key::Exp10:
-        v = std::pow(10.0, x);
-        break;
-      case Key::Sin:
-        v = std::sin(x);
-        break;
-      case Key::Cos:
-        v = std::cos(x);
-        break;
-      case Key::Tan:
-        v = std::tan(x);
-        break;
-      case Key::Factorial: {
-        if (x < 0.0 || x != std::floor(x) || x > 170.0) {
-          fail("Invalid input");
-          return;
-        }
-        v = 1.0;
-        for (int i = 2; i <= static_cast<int>(x); ++i) v *= i;
-        break;
-      }
-      default:
-        return;
-    }
-    if (std::isnan(v) || std::isinf(v)) {
-      fail("Overflow");
-      return;
-    }
-    setEntryFrom(v);
-    entryLive_ = true;
-    // The entry is a result now, not something typed: another digit starts a
-    // new number rather than extending this one.
-    entryLive_ = false;
-    acc_ = v;
     refresh();
   }
 
@@ -470,15 +389,15 @@ class Engine {
   }
 
   static const char* opGlyph(const Key op) {
+    // The real signs, as UTF-8. Safe because every line the engine produces is
+    // drawn in a calculator cut, and all of them carry U+00D7, U+00F7 and
+    // U+2212 -- which is the entire reason those cuts exist. A Toybox cut would
+    // draw them as nothing at all.
     switch (op) {
       case Key::Add:
         return "+";
       case Key::Sub:
         return "\xE2\x88\x92";
-      // The real signs, as UTF-8. Safe because every line the engine produces
-      // is drawn in a calculator cut, and all three of those carry U+00D7,
-      // U+00F7 and U+2212 -- which is the entire reason those cuts exist. A
-      // Toybox cut would draw them as nothing at all.
       case Key::Mul:
         return "\xC3\x97";
       case Key::Div:
@@ -488,9 +407,33 @@ class Engine {
     }
   }
 
+  // A decimal value as a display string, inside the budget. The ONE place a
+  // number becomes text, so nothing on the panel can be longer than the display
+  // can hold.
+  void writeNumber(const decNumber& value, char* out, const size_t n) const {
+    // Rounded to the SHOWN precision first. The guard digits exist so the
+    // arithmetic is right; showing them is what would put 0.9999999999 on the
+    // panel where a calculator says 1.
+    decContext shown = ctx_;
+    shown.digits = kSignificantDigits;
+    shown.status = 0;
+    decNumber rounded;
+    decNumberPlus(&rounded, &value, &shown);
+
+    uint8_t bcd[DECNUMDIGITS + 1];
+    decNumberGetBCD(&rounded, bcd);
+    Decimal shape;
+    shape.coeff = bcd;
+    shape.digits = rounded.digits;
+    shape.exponent = rounded.exponent;
+    shape.negative = decNumberIsNegative(&rounded) != 0;
+    const int budget = static_cast<int>(n) - 1 < kMaxDisplayChars ? static_cast<int>(n) - 1 : kMaxDisplayChars;
+    if (formatDecimal(shape, budget, out, static_cast<int>(n)) == 0) std::snprintf(out, n, "OVERFLOW");
+  }
+
   void writePending() {
     char lhs[kTextMax];
-    formatNumber(acc_, lhs, sizeof(lhs));
+    writeNumber(acc_, lhs, sizeof(lhs));
     std::snprintf(pending_, sizeof(pending_), "%s %s", lhs, opGlyph(pendingOp_));
   }
 
@@ -507,12 +450,18 @@ class Engine {
   void refresh() {
     if (error_) return;
     if (entryLive_) {
+      // What is being TYPED is shown exactly as typed: a trailing point stays
+      // while you are still in the middle of putting one there, and "0.50" does
+      // not collapse to "0.5" under your finger.
       std::snprintf(display_, sizeof(display_), "%s%s", entryNegative_ ? "-" : "", entry_);
-    } else {
-      formatNumber(entryNegative_ ? -std::atof(entry_) : std::atof(entry_), display_, sizeof(display_));
+      return;
     }
+    writeNumber(acc_, display_, sizeof(display_));
   }
 
+  decContext ctx_{};
+  decNumber acc_{};
+  decNumber repeatOperand_{};
   char entry_[kTextMax] = {};
   char display_[kTextMax * 2] = {};
   char pending_[kTextMax * 2] = {};
@@ -524,10 +473,8 @@ class Engine {
   bool entryHasDot_ = false;
   bool entryNegative_ = false;
   bool error_ = false;
-  double acc_ = 0.0;
   Key pendingOp_ = Key::None;
   Key repeatOp_ = Key::None;
-  double repeatOperand_ = 0.0;
 };
 
 }  // namespace calc

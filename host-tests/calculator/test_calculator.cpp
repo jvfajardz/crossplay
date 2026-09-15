@@ -12,7 +12,8 @@
 #include <cstring>
 
 #include "CalcEngine.h"
-#include "CalcSkin.h"
+#include "CalcFormat.h"
+#include "CalcStyle.h"
 
 using namespace calc;
 
@@ -90,15 +91,6 @@ void type(Engine& e, const char* keys) {
         break;
       case ' ':
         break;  // spacing, for runs that read as words
-      case 'r':
-        e.press(Key::Sqrt);
-        break;
-      case 'q':
-        e.press(Key::Square);
-        break;
-      case 'i':
-        e.press(Key::Reciprocal);
-        break;
       default:
         std::printf("bad key '%c' in \"%s\"\n", *p, keys);
         break;
@@ -112,45 +104,155 @@ const char* run(Engine& e, const char* keys) {
   return e.display();
 }
 
-// --- the number on the panel ------------------------------------------------
+// --- the arithmetic is decimal ----------------------------------------------
 
-void testTheDisplayHidesBinaryFloatNoise() {
-  char out[64];
-  // The canonical one. The double is 0.30000000000000004; a calculator that
-  // prints its full precision is the calculator everyone says is broken.
-  formatNumber(0.1 + 0.2, out, sizeof(out));
-  CHECK_TEXT(out, "0.3");
-  formatNumber(1.1 * 3.0, out, sizeof(out));
-  CHECK_TEXT(out, "3.3");
-  formatNumber(4.35 * 100.0, out, sizeof(out));
-  CHECK_TEXT(out, "435");
-  formatNumber(0.7 * 10.0 - 7.0, out, sizeof(out));
-  CHECK_TEXT(out, "0");
-  // Twelve significant digits, so a third is twelve threes and not seventeen.
-  formatNumber(1.0 / 3.0, out, sizeof(out));
-  CHECK_TEXT(out, "0.333333333333");
-  // -0.0 is a real double and reads as a bug on a panel.
-  formatNumber(-0.0, out, sizeof(out));
-  CHECK_TEXT(out, "0");
-  formatNumber(1e20, out, sizeof(out));
-  CHECK_TEXT(out, "1e20");
-  formatNumber(1.5e-8, out, sizeof(out));
-  CHECK_TEXT(out, "1.5e-8");
-  formatNumber(999999999999.0, out, sizeof(out));
-  CHECK_TEXT(out, "999999999999");
+// The reason lib/decNumber is vendored at all. Rounding a double to twelve
+// significant digits hides the first of these and CANNOT hide the second: there
+// the error IS the answer, so it comes out as 5.55e-17 whatever the display
+// does. Casio and TI show 0 because their arithmetic is decimal, not because
+// their displays are cleverer.
+void testTheArithmeticIsDecimalRatherThanBinary() {
+  Engine e;
+  CHECK_TEXT(run(e, "0.1+0.2="), "0.3");
+  CHECK_TEXT(run(e, "0.1+0.2-0.3="), "0");
+  CHECK_TEXT(run(e, "1.1x3="), "3.3");
+  CHECK_TEXT(run(e, "1.1x3-3.3="), "0");
+  CHECK_TEXT(run(e, "4.35x100="), "435");
+  CHECK_TEXT(run(e, "0.7x10-7="), "0");
+  CHECK_TEXT(run(e, "1.03-0.42="), "0.61");
+  // Decimal arithmetic preserves scale: 4.35 x 100 is exactly 435.00 and 1.50 is
+  // exactly 1.50. A calculator shows neither trailing zero.
+  CHECK_TEXT(run(e, "1.5x1="), "1.5");
+  CHECK_TEXT(run(e, "2.50+2.50="), "5");
 }
 
-// The boundary this design has, stated as a test rather than left to be
-// discovered by a user. Twelve-digit rounding fixes every case where the error
-// is small against the result and NONE where the result is near zero, because
-// the error is then the whole answer. Casio shows 0 here because Casio's
-// arithmetic is decimal, not because its display is cleverer. If this test ever
-// has to change, the change is decNumber, not a bigger rounding.
-void testTheKnownLimitOfBinaryArithmetic() {
+// Ten significant digits, which is what kMaxDisplayChars allows -- a sign, ten
+// digits and a point -- and what a normal pocket calculator carries.
+// The guard digits, which are the difference between decimal arithmetic and a
+// decimal CALCULATOR. Sixteen working digits, ten shown: without the six hidden
+// ones, a third times three is 0.9999999999 on the panel, which is the answer
+// nobody wants and every physical calculator avoids the same way.
+void testGuardDigitsMakeAThirdTimesThreeCountAsOne() {
+  Engine e;
+  CHECK_TEXT(run(e, "1/3x3="), "1");
+  CHECK_TEXT(run(e, "2/3x3="), "2");
+  CHECK_TEXT(run(e, "1/7x7="), "1");
+  CHECK_TEXT(run(e, "10/3x3="), "10");
+  // And they do not paper over a real difference: a third is still a third.
+  CHECK_TEXT(run(e, "1/3="), "0.3333333333");
+}
+
+void testTenSignificantDigits() {
+  Engine e;
+  CHECK_TEXT(run(e, "1/3="), "0.3333333333");
+  CHECK_TEXT(run(e, "2/3="), "0.6666666667");  // rounded half up at the tenth
+  CHECK_TEXT(run(e, "9999999999+1="), "10000000000");
+  CHECK_TEXT(run(e, "1/8="), "0.125");
+  // Past the display's reach it goes to an exponent rather than being clipped.
+  CHECK_TEXT(run(e, "9999999999x9999999999="), "9.999999998e+19");
+  // Fixed while fixed fits, even at the bottom of the range: a calculator
+  // shows 0.0000000001, not 1e-10.
+  CHECK_TEXT(run(e, "1/9999999999="), "0.0000000001");
+}
+
+// --- the display formatter --------------------------------------------------
+
+void fmt(const char* digits, const int exponent, const bool neg, const int budget, const char* want) {
+  uint8_t coeff[40];
+  int n = 0;
+  for (const char* p = digits; *p; ++p) coeff[n++] = static_cast<uint8_t>(*p - '0');
   char out[64];
-  formatNumber(0.1 + 0.2 - 0.3, out, sizeof(out));
-  CHECK(std::strcmp(out, "0") != 0);
-  CHECK(std::strncmp(out, "5.55", 4) == 0);
+  const int len = formatDecimal(Decimal{coeff, n, exponent, neg}, budget, out, sizeof(out));
+  ++checks;
+  if (std::strcmp(out, want) != 0 || len != static_cast<int>(std::strlen(out)) || len > budget) {
+    ++failures;
+    std::printf("FAIL %s:%d  %se%d b=%d -> \"%s\" (%d) want \"%s\"\n", __FILE__, __LINE__, digits, exponent, budget,
+                out, len, want);
+  }
+}
+
+void testTheDisplayFormatter() {
+  // Fixed whenever fixed fits: a calculator shows 1000, never 1E+3.
+  fmt("3", -1, false, 12, "0.3");
+  fmt("435", 0, false, 12, "435");
+  fmt("15", 2, false, 12, "1500");
+  fmt("546875", -3, false, 12, "546.875");
+  fmt("9999999999", 0, true, 12, "-9999999999");
+  fmt("1234567890", -9, true, 12, "-1.23456789");
+  // Decimal arithmetic preserves scale, so 4.35 x 100 is exactly 435.00 and
+  // 15.00 is exactly 15 -- the trailing zeros of a FRACTION are noise. The ones
+  // to the LEFT of the point are magnitude and stay.
+  fmt("43500", -2, false, 12, "435");
+  fmt("1500", -2, false, 12, "15");
+  fmt("15", 2, false, 12, "1500");
+  // Zero is zero. A negative zero is a real decimal value and reads as a bug.
+  fmt("0", 0, false, 12, "0");
+  fmt("0", -5, true, 12, "0");
+  // Scientific only when fixed cannot fit, mantissa cut to what the exponent
+  // leaves -- which is what a real calculator does when its exponent field eats
+  // into its mantissa field.
+  fmt("1", 20, false, 12, "1e+20");
+  fmt("123456789", -13, false, 12, "1.2345679e-5");
+  fmt("123456789", 95, false, 12, "1.23457e+103");
+  fmt("999", 99, false, 12, "9.99e+101");
+  // Every kept digit a nine: the mantissa carries to a new power of ten, and the
+  // string gets SHORTER rather than longer.
+  fmt("99999999", -99, true, 12, "-1e-91");
+  fmt("99999999999", -1, true, 12, "-1e+10");
+  fmt("999999999", 100, false, 12, "1e+109");
+  // A narrow budget still produces something readable rather than a clipped one.
+  fmt("99999", -4, false, 6, "9.9999");
+  fmt("123456789", -4, false, 8, "12345.68");  // rounded to fit, NOT dropped to an exponent
+  fmt("123456789", -8, true, 8, "-1.23457");
+}
+
+// The property Mario asked for, checked rather than argued: NOTHING the
+// formatter can produce is longer than the budget it was given. Every
+// coefficient length, every exponent across the range a ten digit calculator can
+// reach, both signs, and every budget from useless to generous -- because the
+// one case that overflows will not be the one anybody thought to write down.
+void testTheFormatterCanNeverExceedItsBudget() {
+  uint8_t coeff[16];
+  int over = 0;
+  int scanned = 0;
+  for (int n = 1; n <= 12; ++n) {
+    for (int pattern = 0; pattern < 4; ++pattern) {
+      for (int i = 0; i < n; ++i) {
+        coeff[i] = static_cast<uint8_t>(pattern == 0   ? 9
+                                        : pattern == 1 ? (i == 0 ? 1 : 0)
+                                        : pattern == 2 ? (i % 10)
+                                                       : (i == n - 1 ? 5 : 9));
+      }
+      if (coeff[0] == 0) coeff[0] = 1;
+      for (int exponent = -120; exponent <= 120; ++exponent) {
+        for (int neg = 0; neg < 2; ++neg) {
+          for (int budget = 6; budget <= 16; ++budget) {
+            char out[64];
+            const int len = formatDecimal(Decimal{coeff, n, exponent, neg != 0}, budget, out, sizeof(out));
+            ++scanned;
+            // A zero return means "cannot be shown at all", which is legitimate
+            // at a budget too small for one digit and an exponent -- and which
+            // the caller turns into an overflow. What is NOT legitimate is a
+            // zero at the budget this app actually uses.
+            if (len == 0 && budget >= kMaxDisplayChars) {
+              if (++over <= 3) std::printf("  nothing could be shown at budget %d\n", budget);
+              continue;
+            }
+            if (len > budget || len != static_cast<int>(std::strlen(out))) {
+              if (++over <= 3) {
+                std::printf("  \"%s\" is %d characters in a budget of %d\n", out, len, budget);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  ++checks;
+  if (over) {
+    ++failures;
+    std::printf("FAIL %s:%d  %d of %d formatter results exceeded their budget\n", __FILE__, __LINE__, over, scanned);
+  }
 }
 
 // --- typing -----------------------------------------------------------------
@@ -166,7 +268,7 @@ void testTypingANumber() {
   CHECK_TEXT(run(e, "5n n"), "5");
   // Thirteen digits typed: the thirteenth is refused rather than accepted and
   // silently rounded away.
-  CHECK_TEXT(run(e, "1234567890123"), "123456789012");
+  CHECK_TEXT(run(e, "1234567890123"), "1234567890");
   CHECK_TEXT(run(e, "123<"), "12");
   CHECK_TEXT(run(e, "1<<"), "0");
   CHECK_TEXT(run(e, "7E"), "0");  // CE clears what is being typed
@@ -227,32 +329,23 @@ void testNegateAppliesToWhatIsOnScreen() {
   CHECK_TEXT(run(e, "2x3=n"), "-6");
 }
 
-void testTheUnaryKeys() {
-  Engine e;
-  CHECK_TEXT(run(e, "9r"), "3");
-  CHECK_TEXT(run(e, "7q"), "49");
-  CHECK_TEXT(run(e, "4i"), "0.25");
-  // A unary result is a result, not something you are still typing: the next
-  // digit starts a new number rather than extending it.
-  CHECK_TEXT(run(e, "9r5"), "5");
-}
-
 // An error is a wall. Letting a digit land on top of "Cannot divide by zero" is
 // how a calculator starts quietly lying: the message goes away, the broken
 // state does not.
 void testErrorsStopEverythingButClear() {
   Engine e;
-  CHECK_TEXT(run(e, "5/0="), "Cannot divide by zero");
+  CHECK_TEXT(run(e, "5/0="), "DIVIDE BY 0");
   CHECK(e.hasError());
   type(e, "7");
-  CHECK_TEXT(e.display(), "Cannot divide by zero");
+  CHECK_TEXT(e.display(), "DIVIDE BY 0");
   type(e, "+1=");
-  CHECK_TEXT(e.display(), "Cannot divide by zero");
+  CHECK_TEXT(e.display(), "DIVIDE BY 0");
   type(e, "C");
   CHECK(!e.hasError());
   CHECK_TEXT(e.display(), "0");
-  CHECK_TEXT(run(e, "5n r"), "Invalid input");
-  CHECK_TEXT(run(e, "0i"), "Cannot divide by zero");
+  // Zero over zero is INVALID rather than a division by zero, and decNumber
+  // reports it on a different status bit.
+  CHECK_TEXT(run(e, "0/0="), "BAD INPUT");
   // CE gets out of it too, which is what Windows does and what a hand reaches
   // for first.
   run(e, "5/0=");
@@ -271,27 +364,21 @@ void testTheTapeRecordsFinishedSums() {
   CHECK_TEXT(e.tapeLine(1), "250 \xC3\x97 4 = 1000");
 }
 
-// --- the pads ---------------------------------------------------------------
+// --- the pad ----------------------------------------------------------------
 
-const Skin* kAll[] = {&skins::kToybox, &skins::kInstrument, &skins::kNight, &skins::kSwiss, &skins::kLedger};
-
-// The activity's own geometry function, not a copy of it: a host suite that
-// re-derives the layout checks a layout the panel does not draw.
-PadGeom geomFor(const Skin& s) { return calc::geomFor(s, 480, 800); }
+PadGeom geom() { return padGeometry(480, 800); }
+Rect16 body() { return bodyRect(480, 800); }
 
 // The floor a finger needs. Apple's is 44pt, which at this panel's 220ppi is
-// about 61px; no skin may come under it in either direction. A skin is a look,
-// and a look is not allowed to cost reachability.
+// about 61px; nothing on this pad may come under it in either direction.
 constexpr int kMinTouchPx = 61;
 
-void testEveryKeyIsBigEnoughToHitInEverySkin() {
-  for (const Skin* s : kAll) {
-    const PadGeom g = geomFor(*s);
-    CHECK(g.cellW >= kMinTouchPx);
-    CHECK(g.cellH >= kMinTouchPx);
-    if (g.cellW < kMinTouchPx || g.cellH < kMinTouchPx) {
-      std::printf("  %s keys are %dx%d px\n", s->name, g.cellW, g.cellH);
-    }
+void testEveryKeyIsBigEnoughToHit() {
+  const PadGeom g = geom();
+  CHECK(g.cellW >= kMinTouchPx);
+  CHECK(g.cellH >= kMinTouchPx);
+  if (g.cellW < kMinTouchPx || g.cellH < kMinTouchPx) {
+    std::printf("  keys are %dx%d px\n", g.cellW, g.cellH);
   }
 }
 
@@ -303,81 +390,80 @@ void testEveryKeyIsBigEnoughToHitInEverySkin() {
 // each key's own centre inside its own (wrong) rect, so a systematically
 // misplaced pad passed. The corners are what can fail.
 void testEveryKeyAnswersOverItsWholeFace() {
-  for (const Skin* s : kAll) {
-    const PadGeom g = geomFor(*s);
-    const int cells = kPad.cols * kPad.rows;
-    for (int i = 0; i < cells; ++i) {
-      if (kPad.keys[i].key == Key::None) continue;
-      const Rect16 r = keyRect(kPad, g, i);
-      const int probes[5][2] = {{r.x + r.w / 2, r.y + r.h / 2},
-                                {r.x + 2, r.y + 2},
-                                {r.right() - 3, r.y + 2},
-                                {r.x + 2, r.bottom() - 3},
-                                {r.right() - 3, r.bottom() - 3}};
-      for (const auto& p : probes) {
-        const int hit = keyAt(kPad, g, p[0], p[1]);
-        CHECK(hit == i);
-        if (hit != i) std::printf("  %s key %d: (%d,%d) resolves to %d\n", s->name, i, p[0], p[1], hit);
-      }
-      CHECK(keyAt(kPad, g, r.x - 1, r.y + r.h / 2) != i);
-      CHECK(keyAt(kPad, g, r.right(), r.y + r.h / 2) != i);
-      CHECK(keyAt(kPad, g, r.x + r.w / 2, r.y - 1) != i);
-      CHECK(keyAt(kPad, g, r.x + r.w / 2, r.bottom()) != i);
+  const PadGeom g = geom();
+  const int cells = kPad.cols * kPad.rows;
+  for (int i = 0; i < cells; ++i) {
+    if (kPad.keys[i].key == Key::None) continue;
+    const Rect16 r = keyRect(kPad, g, i);
+    const int probes[5][2] = {{r.x + r.w / 2, r.y + r.h / 2},
+                              {r.x + 2, r.y + 2},
+                              {r.right() - 3, r.y + 2},
+                              {r.x + 2, r.bottom() - 3},
+                              {r.right() - 3, r.bottom() - 3}};
+    for (const auto& p : probes) {
+      const int hit = keyAt(kPad, g, p[0], p[1]);
+      CHECK(hit == i);
+      if (hit != i) std::printf("  key %d: (%d,%d) resolves to %d\n", i, p[0], p[1], hit);
     }
+    CHECK(keyAt(kPad, g, r.x - 1, r.y + r.h / 2) != i);
+    CHECK(keyAt(kPad, g, r.right(), r.y + r.h / 2) != i);
+    CHECK(keyAt(kPad, g, r.x + r.w / 2, r.y - 1) != i);
+    CHECK(keyAt(kPad, g, r.x + r.w / 2, r.bottom()) != i);
   }
+}
+
+// The gaps refuse rather than round into a neighbour. On a panel that repaints in
+// a second, a tap that did the wrong thing costs far more than one that did
+// nothing: you have to notice it, wait a refresh, and undo it.
+void testTheGapsBetweenKeysAnswerNothing() {
+  const PadGeom g = geom();
+  const Rect16 first = keyRect(kPad, g, 0);
+  CHECK(keyAt(kPad, g, first.right() + kKeyGapPx / 2, first.y + first.h / 2) < 0);
 }
 
 void testNoTwoKeysOverlapAndNoneLeavesTheBody() {
-  for (const Skin* s : kAll) {
-    const Rect16 b = bodyFor(*s, 480, 800);
-    const PadGeom g = geomFor(*s);
-    const int cells = kPad.cols * kPad.rows;
-    for (int i = 0; i < cells; ++i) {
-      if (kPad.keys[i].key == Key::None) continue;
-      const Rect16 a = keyRect(kPad, g, i);
-      CHECK(a.x >= b.x && a.right() <= b.right());
-      CHECK(a.y >= g.grid.y && a.bottom() <= b.bottom());
-      for (int j = i + 1; j < cells; ++j) {
-        if (kPad.keys[j].key == Key::None) continue;
-        const Rect16 c = keyRect(kPad, g, j);
-        const bool apart = a.right() <= c.x || c.right() <= a.x || a.bottom() <= c.y || c.bottom() <= a.y;
-        CHECK(apart);
-        if (!apart) std::printf("  %s keys %d and %d overlap\n", s->name, i, j);
-      }
+  const Rect16 b = body();
+  const PadGeom g = geom();
+  const int cells = kPad.cols * kPad.rows;
+  for (int i = 0; i < cells; ++i) {
+    if (kPad.keys[i].key == Key::None) continue;
+    const Rect16 a = keyRect(kPad, g, i);
+    CHECK(a.x >= b.x && a.right() <= b.right());
+    CHECK(a.y >= g.grid.y && a.bottom() <= b.bottom());
+    for (int j = i + 1; j < cells; ++j) {
+      if (kPad.keys[j].key == Key::None) continue;
+      const Rect16 c = keyRect(kPad, g, j);
+      const bool apart = a.right() <= c.x || c.right() <= a.x || a.bottom() <= c.y || c.bottom() <= a.y;
+      CHECK(apart);
+      if (!apart) std::printf("  keys %d and %d overlap\n", i, j);
     }
   }
 }
 
-// The pad must not run into the chrome above it or the bezel below it. Every
-// skin sets its own chrome height and margins, so this is the one place that
-// notices a skin whose numbers do not add up.
-void testNoSkinCollidesWithItsOwnChrome() {
-  for (const Skin* s : kAll) {
-    const Rect16 b = bodyFor(*s, 480, 800);
-    CHECK(b.y >= s->chromeH);
-    CHECK(b.h > 0 && b.w > 0);
-    const PadGeom g = geomFor(*s);
-    CHECK(g.display.bottom() <= g.grid.y);
-    CHECK(g.grid.bottom() <= b.bottom());
-    // Nothing left over at the bottom, in ANY skin. The only slack allowed is
-    // what integer division leaves when the grid height does not divide by the
-    // row count -- at most one pixel a row. This is the check that makes "the
-    // spacing is off" a red suite rather than something you notice in a render:
-    // every band in the display is derived from a cut metric, so a leftover
-    // here means a band was guessed.
-    const Rect16 last = keyRect(kPad, g, kPad.cols * kPad.rows - 1);
-    CHECK(b.bottom() - last.bottom() < kPad.rows);
-    if (b.bottom() - last.bottom() >= kPad.rows) {
-      std::printf("  %s leaves %d px of unexplained panel under its pad\n", s->name, b.bottom() - last.bottom());
-    }
-    // And nothing left over on the right, for the same reason.
-    const Rect16 rightmost = keyRect(kPad, g, kPad.cols - 1);
-    CHECK(b.right() - rightmost.right() < kPad.cols);
+// Nothing left over, anywhere. The only slack allowed is what integer division
+// leaves when the grid does not divide by the row or column count. This is the
+// check that makes "the spacing is off" a red suite rather than something you
+// notice in a render: every band in the display is derived from a cut metric, so
+// a leftover here means a band was guessed.
+void testNothingIsLeftOver() {
+  const Rect16 b = body();
+  const PadGeom g = geom();
+  CHECK(b.y >= kChromeHeight);
+  CHECK(g.display.bottom() <= g.grid.y);
+  CHECK(g.grid.bottom() <= b.bottom());
+  const Rect16 last = keyRect(kPad, g, kPad.cols * kPad.rows - 1);
+  CHECK(b.bottom() - last.bottom() < kPad.rows);
+  if (b.bottom() - last.bottom() >= kPad.rows) {
+    std::printf("  %d px of unexplained panel under the pad\n", b.bottom() - last.bottom());
   }
+  const Rect16 rightmost = keyRect(kPad, g, kPad.cols - 1);
+  CHECK(b.right() - rightmost.right() < kPad.cols);
+  // And the display's own bands add up to the height it declared.
+  CHECK(displayHeight() == kSmallCut.lineHeight + kNumberCut.capHeight + 2 * kNumberAir + kRule);
 }
 
-// Whatever else a skin changes, it stays a calculator: the ten digits, the
-// point, the four operators, equals and a way back to zero.
+// Whatever else changes, it stays a calculator: the ten digits, the point, the
+// four operators, equals, a way back to zero, a way to lose one digit and a sign.
 void testThePadCanActuallyCalculate() {
   bool seen[64] = {};
   const int cells = kPad.cols * kPad.rows;
@@ -391,45 +477,15 @@ void testThePadCanActuallyCalculate() {
   }
 }
 
-// A subtitle is a second line ABOUT the app, never its name again. SWISS shipped
-// a render whose header read "CALCULATOR   CALCULATOR" because its subtitle was
-// the title, and the Rule chrome draws both.
-void testNoSkinRepeatsItsOwnTitle() {
-  for (const Skin* s : kAll) {
-    if (!s->subtitle) continue;
-    CHECK(std::strcmp(s->subtitle, "CALCULATOR") != 0);
-    if (std::strcmp(s->subtitle, "CALCULATOR") == 0) {
-      std::printf("  %s subtitle repeats the title\n", s->name);
-    }
-  }
-}
-
-// Every key says what it is, in every skin. The plus-minus key carries no label
-// of its own because not every face can spell U+00B1 -- Jersey 25 cannot, and a
-// glyph the face lacks draws as a HOLE, not a box -- so the skin supplies it,
-// and a skin that forgot to would leave one blank key that still works.
-void testEveryKeyHasALabelInEverySkin() {
-  for (const Skin* s : kAll) {
-    CHECK(s->plusMinus != nullptr && s->plusMinus[0] != '\0');
-    const int cells = kPad.cols * kPad.rows;
-    for (int i = 0; i < cells; ++i) {
-      if (kPad.keys[i].key == Key::None) continue;
-      const char* label = labelFor(*s, kPad.keys[i]);
-      CHECK(label != nullptr && label[0] != '\0');
-    }
-  }
-}
-
-// Jersey 25 has no U+00B1 and no U+221A. A skin set in it that asked for the
-// real sign would draw an invisible key, which is the exact failure the drawn
-// glyphs were replaced to avoid -- so the pairing is checked rather than
-// remembered.
-void testNoSkinAsksItsFaceForAGlyphItLacks() {
-  for (const Skin* s : kAll) {
-    const bool jersey = s->labelFont == kJerseyLabelFontId;
-    const bool asksForPlusMinus = std::strcmp(s->plusMinus, "\xC2\xB1") == 0;
-    CHECK(!(jersey && asksForPlusMinus));
-    if (jersey && asksForPlusMinus) std::printf("  %s is set in Jersey and asks for U+00B1\n", s->name);
+// Every key says what it is. The plus-minus key carries no label of its own
+// because Jersey 25 has no U+00B1 -- and a glyph the face lacks draws as a HOLE,
+// not a box -- so the style supplies the keyboard-era spelling instead.
+void testEveryKeyHasALabel() {
+  const int cells = kPad.cols * kPad.rows;
+  for (int i = 0; i < cells; ++i) {
+    if (kPad.keys[i].key == Key::None) continue;
+    const char* label = labelFor(kPad.keys[i]);
+    CHECK(label != nullptr && label[0] != '\0');
   }
 }
 
@@ -441,26 +497,50 @@ void testNoSkinAsksItsFaceForAGlyphItLacks() {
 // do the other's half: a host test cannot parse a font header, and a Python
 // script cannot be trusted to re-derive the geometry.
 void printLabelTable() {
-  for (const Skin* s : kAll) {
-    const PadGeom g = geomFor(*s);
-    std::printf("SKIN %s %d %d %d\n", s->name, s->labelFont, g.cellW, g.cellH);
-    const int cells = kPad.cols * kPad.rows;
-    for (int i = 0; i < cells; ++i) {
-      if (kPad.keys[i].key == Key::None) continue;
-      const char* label = labelFor(*s, kPad.keys[i]);
-      // The RESOLVED cut, through the same function the panel calls. Emitting
-      // the skin's big cut and letting the script assume it would measure a
-      // face the device never uses, which is a gate that reports on something
-      // else.
-      std::printf("LABEL %s %d %s\n", s->name, labelFontFor(*s, label), label);
-    }
-    // The whole ladder, in order, so the script can walk it exactly as the
-    // activity does. Emitting only the top rung is how a display that quietly
-    // falls three rungs to a 26px label cut reports as fitting.
-    for (int rung = 0; rung < kNumberRungs; ++rung) {
-      std::printf("NUMBER %s %d %d %d\n", s->name, rung, numberFontFor(*s, rung), g.display.w);
-    }
+  const PadGeom g = geom();
+  std::printf("PAD %d %d %d\n", g.cellW, g.cellH, g.display.w);
+  const int cells = kPad.cols * kPad.rows;
+  for (int i = 0; i < cells; ++i) {
+    if (kPad.keys[i].key == Key::None) continue;
+    const char* label = labelFor(kPad.keys[i]);
+    // The RESOLVED cut, through the same function the panel calls. Emitting the
+    // headline cut and letting the script assume it would measure a face the
+    // device never uses, which is a gate that reports on something else.
+    std::printf("LABEL %d %s\n", labelFontFor(label), label);
   }
+  for (int rung = 0; rung < kNumberRungs; ++rung) {
+    std::printf("RUNG %d %d\n", rung, numberFontFor(rung));
+  }
+
+  // The engine's OWN output at its limits, for the script to measure. Not a list
+  // of samples somebody thought of: these are what it actually produced, so a
+  // formatting change that lengthens a result cannot slip past the gate by being
+  // a shape nobody imagined.
+  static const char* kLimits[] = {
+      "9999999999x9999999999=",              // the largest product it can reach
+      "9999999999+9999999999=",              // and the largest sum
+      "1/3=",                                // a repeating decimal, filled to capacity
+      "2/3=",                                // the same, rounded up at the last digit
+      "1/0=",                                // the longest error string
+      "0.0000000001/9999999999=",            // driven off the bottom into an exponent
+      "9999999999x9999999999=x9999999999=",  // and off the top
+      "1234567890n",                         // the widest thing that can be TYPED
+      "0.123456789n",                        // a typed fraction with a sign
+  };
+  Engine engine;
+  for (const char* keys : kLimits) {
+    run(engine, keys);
+    // Which cut this string will really be drawn in, resolved the way the
+    // activity resolves it: an error is words and goes in the label cut, a
+    // result is digits and walks the number rungs.
+    std::printf("WORST %d %s\n", engine.hasError() ? kLabelFontId : 0, engine.display());
+    if (engine.pending()[0]) std::printf("PENDING %s\n", engine.pending());
+  }
+  // And the longest pending line: a full-width operand with an operator after it.
+  run(engine, "9999999999x");
+  std::printf("PENDING %s\n", engine.pending());
+  run(engine, "0.123456789n+");
+  std::printf("PENDING %s\n", engine.pending());
 }
 
 int main(int argc, char** argv) {
@@ -468,25 +548,26 @@ int main(int argc, char** argv) {
     printLabelTable();
     return 0;
   }
-  testTheDisplayHidesBinaryFloatNoise();
-  testTheKnownLimitOfBinaryArithmetic();
+  testTheArithmeticIsDecimalRatherThanBinary();
+  testGuardDigitsMakeAThirdTimesThreeCountAsOne();
+  testTenSignificantDigits();
+  testTheDisplayFormatter();
+  testTheFormatterCanNeverExceedItsBudget();
   testTypingANumber();
   testTheFourFunctions();
   testRepeatedEquals();
   testOperatorReplacement();
   testPercentReadsThePendingOperator();
   testNegateAppliesToWhatIsOnScreen();
-  testTheUnaryKeys();
   testErrorsStopEverythingButClear();
   testTheTapeRecordsFinishedSums();
-  testEveryKeyIsBigEnoughToHitInEverySkin();
+  testEveryKeyIsBigEnoughToHit();
   testEveryKeyAnswersOverItsWholeFace();
+  testTheGapsBetweenKeysAnswerNothing();
   testNoTwoKeysOverlapAndNoneLeavesTheBody();
-  testNoSkinCollidesWithItsOwnChrome();
+  testNothingIsLeftOver();
   testThePadCanActuallyCalculate();
-  testNoSkinRepeatsItsOwnTitle();
-  testEveryKeyHasALabelInEverySkin();
-  testNoSkinAsksItsFaceForAGlyphItLacks();
+  testEveryKeyHasALabel();
 
   // The wording is check.sh's, not a preference: the gate counts sub-suites with
   // grep -c "checks, 0 failed", so a suite that says "failures" runs, passes and

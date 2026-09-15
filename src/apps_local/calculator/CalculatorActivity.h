@@ -3,20 +3,20 @@
 // Calculator on the device. The thin layer: chrome, drawing, taps.
 //
 // The pad is drawn by hand into the body rect rather than built from
-// fui::keyGrid, and that is not a preference. toybox::kMaxInteractions is 24
-// and a screen that registers more loses the LAST ones registered, on the
-// device only, silently -- they draw, they look live, and they answer nothing.
-// The fix for any grid near that ceiling is one geometry function used for BOTH
-// the drawing and the hit test, which is what calc::keyRect and calc::keyAt
-// are. See the Connections archive, which shipped with every date from the 20th
-// onward dead.
+// fui::keyGrid, and that is not a preference. toybox::kMaxInteractions is 24;
+// twenty keys fits, but a screen that goes past it loses the LAST ones
+// registered, on the device only, silently -- they draw, they look live, and
+// they answer nothing. The fix for any grid near that ceiling is one geometry
+// function used for BOTH the drawing and the hit test, which is what
+// calc::keyRect and calc::keyAt are. See the Connections archive, which shipped
+// with every date from the 20th onward dead.
 
 #include <memory>
 
 #include "../../activities/Activity.h"
 #include "../ui/ToyboxScreen.h"
 #include "CalcEngine.h"
-#include "CalcSkin.h"
+#include "CalcStyle.h"
 
 class CalculatorActivity final : public Activity {
  public:
@@ -31,15 +31,10 @@ class CalculatorActivity final : public Activity {
   void render(RenderLock&&) override;
 
  private:
-  calc::Rect16 body() const;
-  void paintGround();
   void drawChrome();
   void drawDisplay(const calc::PadGeom& g);
   void drawPad(const calc::PadGeom& g);
   void drawKey(const calc::KeyDef& key, const calc::Rect16& r);
-  // The largest number cut the string fits in, stepping down rather than
-  // clipping: the design language's rule for anything that will not fit.
-  int fitNumberCut(const char* text, int maxWidth) const;
 
   calc::Engine engine;
   toybox::Interactions interactions;

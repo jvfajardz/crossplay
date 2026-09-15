@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Every key label, measured in the cut its skin actually resolves, against the
-cell that skin actually produces.
+"""Everything the panel will draw, measured against the box it has to fit in.
 
-This is the check that nothing else can make. A host test cannot read a font
-header, and a screenshot shows one state of one skin -- so a label one glyph too
-wide for its key crosses the outline in a skin nobody photographed, and the only
-symptom is that it looks wrong. NIGHT shipped exactly that in its first render:
-Ubuntu Bold's "DEL" came to within a pixel and a half of the key's border on
-both sides, and the three-character keys read as one run of letters.
+This is the check nothing else can make. A C++ host test cannot parse a font
+header, and a screenshot only shows the state somebody photographed -- so a label
+a glyph too wide for its key, or a result one digit too long for the display,
+crosses its border in a state nobody rendered and the only symptom is that it
+looks wrong. Both have already happened here: Ubuntu Bold's "DEL" came within a
+pixel and a half of its key's border, Noto Serif's was fifteen pixels WIDER than
+its key, and a seven-character result was landing three rungs down the display's
+ladder.
 
-It also catches the other half, which is worse because it is invisible: a
-codepoint the face has no glyph for draws as NOTHING AT ALL on this renderer, so
-a plus-minus sign asked of Jersey 25 would be a blank key that still works.
+It checks the invisible half too: a codepoint the face has no glyph for draws as
+NOTHING AT ALL on this renderer, so it is reported rather than silently costing
+zero width.
 
     host-tests/calculator/label_fit.py <table from test_calculator --labels>
 """
@@ -24,8 +25,8 @@ HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 FONTS = REPO / "src/apps_local/calculator/fonts"
 
-# The ids are CalcFontIds.h's, read from it rather than copied, so a renumbered
-# font cannot make this script quietly measure the wrong face.
+# Read from CalcFontIds.h rather than copied, so a renumbered font cannot make
+# this script quietly measure the wrong face.
 IDS = {}
 for line in (REPO / "src/apps_local/calculator/CalcFontIds.h").read_text().splitlines():
     m = re.match(r"constexpr int k(\w+)FontId = (0x[0-9A-Fa-f']+);", line.strip())
@@ -33,47 +34,20 @@ for line in (REPO / "src/apps_local/calculator/CalcFontIds.h").read_text().split
         IDS[int(m.group(2).replace("'", ""), 16)] = m.group(1)
 
 FILES = {
-    "JerseyLabel": "calc_jersey_28",
-    "JerseySmall": "calc_jersey_20",
-    "JerseyNumber": "calc_jersey_56",
-    "JerseyMid": "calc_jersey_44",
-    "JerseyTiny": "calc_jersey_34",
-    "UbuntuLabel": "calc_ubuntu_26",
-    "UbuntuSmall": "calc_ubuntu_18",
-    "UbuntuNumber": "calc_ubuntu_56",
-    "UbuntuMid": "calc_ubuntu_44",
-    "UbuntuTiny": "calc_ubuntu_34",
-    "SerifLabel": "calc_serif_26",
-    "SerifSmall": "calc_serif_16",
-    "SerifNumber": "calc_serif_56",
-    "SerifMid": "calc_serif_44",
-    "SerifTiny": "calc_serif_34",
+    "Label": "calc_jersey_28",
+    "Small": "calc_jersey_20",
+    "Number": "calc_jersey_56",
+    "Mid": "calc_jersey_44",
+    "Tiny": "calc_jersey_34",
+    "Finest": "calc_jersey_26",
 }
-
-# Every id in CalcFontIds.h has to name a file here, or this gate silently
-# stops measuring the face it was pointed at.
 _missing = sorted(set(IDS.values()) - set(FILES))
 assert not _missing, f"label_fit.py has no file for: {', '.join(_missing)}"
 
-# A label has to sit inside its key with air on both sides. Ten per cent a side
-# is the least that still reads as a key with a glyph in it rather than a glyph
-# with a box round it.
+# A label has to sit inside its key with air on both sides. Ten per cent a side is
+# the least that still reads as a key with a glyph in it rather than a glyph with
+# a box round it.
 SIDE_AIR = 0.10
-# What the display has to hold. The first is an everyday result, the last two
-# are the widest the engine can produce: twelve significant digits fixed, and
-# nine plus an exponent once it goes scientific.
-# Each sample carries the lowest rung it may land on, because the ladder's job
-# is not "everything is big" -- it is that an EVERYDAY result is big and an
-# extreme one is merely readable. A seven character result landing three rungs
-# down is the defect this catches: it is not clipped, it is just small, and it
-# only looks wrong next to the same number in a skin whose ladder has a rung
-# there. An exponent is the rarest state a display reaches and may be small.
-SAMPLES = (
-    ("546.875", 34),          # an everyday result, read at arm's length
-    ("17636.5714286", 21),    # twelve significant digits
-    ("-999999999999.", 17),   # the widest fixed form
-    ("-1.23456789e-15", 12),  # scientific: the rarest state, it only has to read
-)
 
 
 def load_font(name):
@@ -97,15 +71,26 @@ def load_font(name):
     return glyphs, intervals
 
 
+def advance_y(name):
+    """EpdFontData's fifth field: the face's own baseline-to-baseline advance."""
+    src = (FONTS / f"{name}.h").read_text()
+    body = src[src.index(f"static const EpdFontData {name} = {{") :]
+    body = body[: body.index("};")]
+    fields = [x.strip().rstrip(",") for x in body.splitlines()[1:] if x.strip()]
+    return int(fields[4])
+
+
 def cap_height(font):
-    """The ink height of a digit. What a reader actually judges the size by --
-    the nominal cut size says nothing across faces, because a 56px Ubuntu Bold
-    and a 56px Jersey put very different amounts of ink on the panel."""
+    """The ink height of a digit -- what a reader judges the size by."""
     glyphs, intervals = font
     for first, last, offset in intervals:
         if first <= ord("8") <= last:
             return glyphs[offset + (ord("8") - first)][1]
     return 0
+
+
+def widest_glyph(font, chars):
+    return max(measure(c, font)[0] for c in chars)
 
 
 def measure(text, font):
@@ -124,37 +109,49 @@ def measure(text, font):
     return total, missing
 
 
+CACHE = {}
+
+
+def font_for(font_id):
+    if font_id not in CACHE:
+        CACHE[font_id] = load_font(FILES[IDS[font_id]])
+    return CACHE[font_id]
+
+
 def check_cut_metrics():
     """CalcCutMetrics.h against the real font headers.
 
     Those constants are not decoration: the display's height is DERIVED from
     them, so a regenerated cut that moves a line height by a pixel moves every
-    band on the screen and takes the difference out of the key rows. Toybox has
-    the same hazard and the same answer; this is the gate that makes the claim
-    in CalcCutMetrics.h true instead of hopeful.
+    band on the screen and takes the difference out of the key rows. This is what
+    makes the claim in that header true rather than hopeful.
     """
     src = (REPO / "src/apps_local/calculator/CalcCutMetrics.h").read_text()
     declared = {
-        m[0]: (int(m[1]), int(m[2]))
-        for m in re.findall(r"constexpr CutMetrics k(\w+)Cut\{(\d+), (\d+)\}", src)
+        m[0]: (int(m[1]), int(m[2]), int(m[3]))
+        for m in re.findall(r"constexpr CutMetrics k(\w+)Cut\{(\d+), (\d+), (\d+)\}", src)
     }
     checks = failed = 0
-    for key, (line_h, cap) in sorted(declared.items()):
+    for key, (line_h, cap, widest) in sorted(declared.items()):
         name = FILES.get(key)
         if name is None:
             failed += 1
             print(f"FAIL label_fit  CalcCutMetrics.h declares k{key}Cut and no font is mapped to it")
             continue
-        font = load_font(FONTS / f"{name}.h") if False else load_font(name)
-        real_cap = cap_height(font)
-        real_line = advance_y(name)
-        checks += 2
-        if real_line != line_h:
+        font = load_font(name)
+        checks += 3
+        if advance_y(name) != line_h:
             failed += 1
-            print(f"FAIL label_fit  k{key}Cut says lineHeight {line_h}, {name}.h has {real_line}")
-        if real_cap != cap:
+            print(f"FAIL label_fit  k{key}Cut says lineHeight {line_h}, {name}.h has {advance_y(name)}")
+        if cap_height(font) != cap:
             failed += 1
-            print(f"FAIL label_fit  k{key}Cut says capHeight {cap}, {name}.h has {real_cap}")
+            print(f"FAIL label_fit  k{key}Cut says capHeight {cap}, {name}.h has {cap_height(font)}")
+        # widestDigit is a CEILING: too small and a width budget computed from it
+        # under-counts, which is the direction that overflows.
+        real = widest_glyph(font, "0123456789.-e")
+        if widest < real:
+            failed += 1
+            print(f"FAIL label_fit  k{key}Cut says widestDigit {widest}, {name}.h has {real:.1f}")
     for key in sorted(set(FILES) - set(declared)):
         checks += 1
         failed += 1
@@ -162,86 +159,81 @@ def check_cut_metrics():
     return checks, failed
 
 
-def advance_y(name):
-    """EpdFontData's fifth field: the face's own baseline-to-baseline advance."""
-    src = (FONTS / f"{name}.h").read_text()
-    body = src[src.index(f"static const EpdFontData {name} = {{"):]
-    body = body[: body.index("};")]
-    fields = [x.strip().rstrip(",") for x in body.splitlines()[1:] if x.strip()]
-    return int(fields[4])
-
-
 def main():
     table = pathlib.Path(sys.argv[1]).read_text().splitlines()
-    cache = {}
-
-    def font_for(font_id):
-        if font_id not in cache:
-            cache[font_id] = load_font(FILES[IDS[font_id]])
-        return cache[font_id]
-
-    skins = {}
-    ladders = {}
     checks, failed = check_cut_metrics()
+    cell_w = display_w = 0
+    rungs = []
+    worst = []
+
     for line in table:
-        # Split on the fixed leading fields only: a label may contain a space
-        # and must reach `measure` exactly as the panel would draw it.
         parts = line.split(" ")
-        if parts[0] == "SKIN":
-            skins[parts[1]] = (int(parts[2]), int(parts[3]), int(parts[4]))
+        if parts[0] == "PAD":
+            cell_w, display_w = int(parts[1]), int(parts[3])
+        elif parts[0] == "RUNG":
+            rungs.append((int(parts[1]), int(parts[2])))
         elif parts[0] == "LABEL":
-            # The font id is the one calc::labelFontFor resolved, not the skin's
-            # headline cut: a word key is set smaller, and measuring the wrong
-            # one is how this gate would pass a label the panel clips.
-            name, font_id, label = parts[1], int(parts[2]), line.split(" ", 3)[3]
-            cell_w = skins[name][1]
+            font_id, label = int(parts[1]), line.split(" ", 2)[2]
             width, missing = measure(label, font_for(font_id))
             budget = cell_w * (1 - 2 * SIDE_AIR)
             checks += 2
             if missing:
                 failed += 1
-                print(f"FAIL label_fit  {name} key \"{label}\": {IDS[font_id]} has no glyph for "
+                print(f"FAIL label_fit  key \"{label}\": {IDS[font_id]} has no glyph for "
                       f"{' '.join('U+%04X' % ord(c) for c in missing)} -- it would draw as nothing")
             if width > budget:
                 failed += 1
-                print(f"FAIL label_fit  {name} key \"{label}\" is {width:.0f}px in a {cell_w}px key "
-                      f"(budget {budget:.0f}px with {int(SIDE_AIR*100)}% air a side)")
-        elif parts[0] == "NUMBER":
-            name, rung, font_id, width_px = parts[1], int(parts[2]), int(parts[3]), int(parts[4])
-            ladders.setdefault(name, (width_px, []))[1].append((rung, font_id))
-
-    # The display steps DOWN a ladder as a result gets longer. Two things can go
-    # wrong and only one of them is visible in a screenshot: a rung missing
-    # (the number drops straight to a label cut and looks broken beside the same
-    # number in another skin), and the bottom rung still not fitting (the panel
-    # clips a result).
-    for name, (width_px, rungs) in sorted(ladders.items()):
-        for text, min_cap in SAMPLES:
+                print(f"FAIL label_fit  key \"{label}\" is {width:.0f}px in a {cell_w}px key "
+                      f"(budget {budget:.0f}px with {int(SIDE_AIR * 100)}% air a side)")
+        elif parts[0] == "WORST":
+            worst.append((int(parts[1]), line.split(" ", 2)[2]))
+        elif parts[0] == "PENDING":
+            text = line.split(" ", 1)[1]
+            small = [fid for fid, n in IDS.items() if n == "Small"][0]
+            width, missing = measure(text, font_for(small))
             checks += 1
-            landed = None
-            for rung, font_id in sorted(rungs):
-                w, missing = measure(text, font_for(font_id))
-                if missing:
-                    failed += 1
-                    print(f"FAIL label_fit  {name}: {IDS[font_id]} has no glyph for "
-                          f"{' '.join('U+%04X' % ord(c) for c in missing)}")
-                    break
-                if w <= width_px:
-                    landed = (rung, font_id, w, cap_height(font_for(font_id)))
-                    break
-            if landed is None:
+            if width > display_w or missing:
                 failed += 1
-                print(f"FAIL label_fit  {name}: \"{text}\" does not fit a {width_px}px display "
-                      f"at ANY rung -- the panel would clip it")
-            elif landed[3] < min_cap:
+                print(f"FAIL label_fit  the pending line \"{text}\" is {width:.0f}px "
+                      f"in a {display_w}px display")
+
+    # The engine's own output, measured. Not samples somebody thought of: these
+    # are the strings the engine produced when the suite drove it to its limits,
+    # so a formatting change that lengthens a result cannot slip past.
+    for fixed_font, text in worst:
+        checks += 2
+        # An error is words in the label cut and has its own budget: it only has
+        # to fit the display, not the twelve-character number bound.
+        if not fixed_font and len(text) > MAX_CHARS:
+            failed += 1
+            print(f"FAIL label_fit  the engine emitted \"{text}\", {len(text)} characters, "
+                  f"over its own {MAX_CHARS} character bound")
+        landed = None
+        for rung, font_id in ([(0, fixed_font)] if fixed_font else sorted(rungs)):
+            w, missing = measure(text, font_for(font_id))
+            if missing:
                 failed += 1
-                print(f"FAIL label_fit  {name}: \"{text}\" lands on {IDS[landed[1]]} at rung "
-                      f"{landed[0]}, {landed[3]}px of capital against a {min_cap}px floor "
-                      f"-- the ladder has a cliff in it")
+                print(f"FAIL label_fit  {IDS[font_id]} has no glyph for "
+                      f"{' '.join('U+%04X' % ord(c) for c in missing)} in \"{text}\"")
+                break
+            if w <= display_w:
+                landed = (rung, font_id, w)
+                break
+        if landed is None:
+            failed += 1
+            print(f"FAIL label_fit  \"{text}\" does not fit a {display_w}px display at ANY rung "
+                  f"-- the panel would clip it")
 
     print(f"{'FAILED' if failed else 'ok'}: {checks} checks, {failed} failed")
     return 1 if failed else 0
 
+
+# Read from the source rather than restated: the bound is the engine's, and a
+# second copy of it here would pass while the engine broke it.
+MAX_CHARS = int(
+    re.search(r"constexpr int kMaxDisplayChars = (\d+);",
+              (REPO / "src/apps_local/calculator/CalcLayout.h").read_text()).group(1)
+)
 
 if __name__ == "__main__":
     sys.exit(main())
