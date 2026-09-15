@@ -10,8 +10,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-void *calc_probe_malloc(size_t n);
-void calc_probe_free(void *p);
+void* calc_probe_malloc(size_t n);
+void calc_probe_free(void* p);
 extern int calc_probe_calls;
 #ifdef __cplusplus
 }

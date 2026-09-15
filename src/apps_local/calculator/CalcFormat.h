@@ -85,9 +85,9 @@ inline void trimFraction(int& digits, int& exponent, const uint8_t* coeff) {
 // How many characters the fixed form would take, sign included.
 inline int fixedLength(const int digits, const int exponent, const bool negative) {
   const int sign = negative ? 1 : 0;
-  if (exponent >= 0) return sign + digits + exponent;          // 1234, 1234000
-  if (digits + exponent > 0) return sign + digits + 1;         // 12.34
-  return sign + 2 + (-exponent - digits) + digits;             // 0.00034
+  if (exponent >= 0) return sign + digits + exponent;   // 1234, 1234000
+  if (digits + exponent > 0) return sign + digits + 1;  // 12.34
+  return sign + 2 + (-exponent - digits) + digits;      // 0.00034
 }
 
 }  // namespace detail

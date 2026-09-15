@@ -18,4 +18,3 @@
 // decContext.c and decNumber.c include it, so compiling them together does not
 // merely warn, it fails to build. See deccontext_impl.c for the other half.
 #include "../third_party/decContext.c"
-

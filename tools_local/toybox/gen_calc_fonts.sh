@@ -44,6 +44,10 @@ cut() {
     python lib/EpdFont/scripts/fontconvert.py "$name" "$size" "$WORK/$name.ttf" "$@" \
     2>/dev/null | grep -v "extracted$" > "$OUT/$name.h"
   sed -i '' -e "s| \* Command used: .*| * Command used: tools_local/toybox/gen_calc_fonts.sh|" "$OUT/$name.h"
+  # Formatted like every other committed header here. fontconvert's own wrapping
+  # is close but not identical, and the difference is the whole clang-format
+  # step going red on a file nobody typed.
+  ./bin/clang-format-fix -i "$OUT/$name.h" >/dev/null 2>&1 || true
   echo "wrote $OUT/$name.h ($(wc -c < "$OUT/$name.h" | tr -d ' ') bytes)"
 }
 
