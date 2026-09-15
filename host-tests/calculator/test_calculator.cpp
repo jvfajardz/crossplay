@@ -329,6 +329,34 @@ void testNegateAppliesToWhatIsOnScreen() {
   CHECK_TEXT(run(e, "2x3=n"), "-6");
 }
 
+// The presses nobody means to make, which are exactly the ones a calculator has
+// to survive: a pad has twenty keys and no grammar, so every sequence is legal
+// input and every one of them has to leave a number on the panel.
+void testTheSequencesNobodyMeansToPress() {
+  Engine e;
+  CHECK_TEXT(run(e, "+"), "0");  // an operator first: zero is the operand
+  CHECK_TEXT(run(e, "+5="), "5");
+  CHECK_TEXT(run(e, "5+="), "10");  // equals with no second operand repeats it
+  CHECK_TEXT(run(e, "="), "0");     // equals with nothing at all
+  CHECK_TEXT(run(e, "5="), "5");
+  CHECK_TEXT(run(e, "..."), "0.");  // one point, and it stays while you type
+  CHECK_TEXT(run(e, "5..5"), "5.5");
+  CHECK_TEXT(run(e, "n"), "0");  // a sign on nothing is still nothing
+  CHECK_TEXT(run(e, "n5"), "5");
+  CHECK_TEXT(run(e, "%"), "0");         // percent with nothing pending
+  CHECK_TEXT(run(e, "<"), "0");         // backspace on an empty entry
+  CHECK_TEXT(run(e, "5+3=<"), "8");     // backspace does NOT eat a result
+  CHECK_TEXT(run(e, "5+3=7"), "7");     // a digit after equals starts a new number
+  CHECK_TEXT(run(e, "5+3=+2="), "10");  // an operator after equals continues from it
+  CHECK_TEXT(run(e, "0n"), "0");        // and there is no negative zero anywhere
+  CHECK_TEXT(run(e, "0n5"), "-5");      // the sign is HELD though, not dropped
+  CHECK_TEXT(run(e, "0.0n"), "0.0");
+  CHECK_TEXT(run(e, "0n+0="), "0");
+  CHECK_TEXT(run(e, "5-5=n"), "0");
+  CHECK_TEXT(run(e, "CCC"), "0");
+  CHECK_TEXT(run(e, "5+++3="), "8");  // operators collapse rather than stack
+}
+
 // An error is a wall. Letting a digit land on top of "Cannot divide by zero" is
 // how a calculator starts quietly lying: the message goes away, the broken
 // state does not.
@@ -559,6 +587,7 @@ int main(int argc, char** argv) {
   testOperatorReplacement();
   testPercentReadsThePendingOperator();
   testNegateAppliesToWhatIsOnScreen();
+  testTheSequencesNobodyMeansToPress();
   testErrorsStopEverythingButClear();
   testTheTapeRecordsFinishedSums();
   testEveryKeyIsBigEnoughToHit();

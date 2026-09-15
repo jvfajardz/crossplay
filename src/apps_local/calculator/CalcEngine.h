@@ -453,7 +453,14 @@ class Engine {
       // What is being TYPED is shown exactly as typed: a trailing point stays
       // while you are still in the middle of putting one there, and "0.50" does
       // not collapse to "0.5" under your finger.
-      std::snprintf(display_, sizeof(display_), "%s%s", entryNegative_ ? "-" : "", entry_);
+      //
+      // The one thing suppressed is a minus in front of a zero. Pressing 0 and
+      // then +/- would otherwise read "-0", which is a wart on any display and
+      // the formatter already refuses it for RESULTS. The sign is still held --
+      // type a digit after it and the number is negative -- it just is not shown
+      // while there is nothing for it to be the sign of.
+      const bool anyDigit = std::strpbrk(entry_, "123456789") != nullptr;
+      std::snprintf(display_, sizeof(display_), "%s%s", entryNegative_ && anyDigit ? "-" : "", entry_);
       return;
     }
     writeNumber(acc_, display_, sizeof(display_));
