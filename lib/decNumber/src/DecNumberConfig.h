@@ -34,7 +34,7 @@
 #define DECLITEND 1
 
 // decNumber allocates only when a working buffer would exceed DECBUFFER digits.
-// At ten context digits nothing comes near 36, so the allocation path never runs
+// At sixteen context digits nothing comes near 36, so the allocation path never runs
 // -- which matters on a device where a failed malloc in the middle of a sum has
 // nowhere to go.
 #define DECBUFFER 36

@@ -64,14 +64,22 @@ inline PadGeom padGeometry(const int screenW, const int screenH) {
 inline const char* labelFor(const KeyDef& key) { return key.label ? key.label : kPlusMinusLabel; }
 
 // Which cut a label is drawn in. Structural rather than measured, so the host
-// gate resolves the same face the panel will: one or two BYTES is a digit, an
-// operator or a two-letter word, and anything longer is a word key. The math
-// signs are two bytes of UTF-8 each, which puts them with the digits at full
-// size, where they belong.
+// gate resolves the same face the panel will: one or two CHARACTERS is a digit,
+// an operator or a two-letter word, and anything longer is a word key.
+//
+// CHARACTERS, counted by skipping UTF-8 continuation bytes -- not bytes. The
+// first version counted bytes and claimed in its own comment that "the math
+// signs are two bytes of UTF-8 each", which is true of U+00D7 and U+00F7 and
+// false of U+2212, the minus sign, which is three. So the minus alone dropped to
+// the small cut and was drawn 17x4 pixels of ink against the plus at 24x23 --
+// visibly, in the same column, on a key the same size. label_fit.py could not
+// see it: the label FITTED, it was just the wrong size.
 inline int labelFontFor(const char* label) {
-  int bytes = 0;
-  for (const char* p = label; *p && bytes < 3; ++p) ++bytes;
-  return bytes > 2 ? kSmallFontId : kLabelFontId;
+  int chars = 0;
+  for (const char* p = label; *p && chars < 3; ++p) {
+    if ((static_cast<unsigned char>(*p) & 0xC0) != 0x80) ++chars;
+  }
+  return chars > 2 ? kSmallFontId : kLabelFontId;
 }
 
 }  // namespace calc

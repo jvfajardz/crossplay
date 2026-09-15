@@ -129,6 +129,8 @@ class Engine {
   void clearAll() {
     resetEntry();
     decNumberZero(&acc_);
+    decNumberZero(&operand_);
+    operandLive_ = false;
     decNumberZero(&repeatOperand_);
     pendingOp_ = Key::None;
     repeatOp_ = Key::None;
@@ -148,19 +150,33 @@ class Engine {
     entryNegative_ = false;
   }
 
+  // CE clears the number being typed and nothing else -- EXCEPT after an error,
+  // where there is no "else" worth keeping. The first version cleared the
+  // message and left the pending operator standing: `5 / 0 =` then CE then `3 =`
+  // quietly answered 1.666666667, computing 5 / 3 from an operation the user had
+  // watched fail. An error means the sum is gone.
+  //
+  // And CE leaves a live ZERO rather than falling back to the accumulator. The
+  // first version showed `5` under a `5 +` pending line, which reads as 5 + 5,
+  // and `5 + 3 CE =` came to 10 where every calculator gives 5.
   void clearEntry() {
-    error_ = false;
+    if (error_) {
+      clearAll();
+      return;
+    }
     ctx_.status = 0;
     resetEntry();
+    entryLive_ = true;
+    operandLive_ = false;
     refresh();
   }
 
-  // The number on screen: what is being typed, or the accumulator when nothing
-  // is. One question, one answer, so no branch can form a second opinion about
-  // which of the two the user is looking at.
+  // The number on screen: what is being typed, a computed operand waiting for an
+  // operator, or the accumulator. One question, one answer, so no branch can
+  // form a second opinion about which the user is looking at.
   void currentValue(decNumber* out) const {
     if (!entryLive_) {
-      decNumberCopy(out, &acc_);
+      decNumberCopy(out, operandLive_ ? &operand_ : &acc_);
       return;
     }
     char text[kTextMax + 2];
@@ -172,7 +188,20 @@ class Engine {
   void takeResult(const decNumber& value) {
     decNumberCopy(&acc_, &value);
     entryLive_ = false;
+    operandLive_ = false;
     refresh();
+  }
+
+  // Infinity and NaN are real decNumber values and they format as "0": their
+  // coefficient is a single zero, so decNumberGetBCD hands the formatter a zero
+  // and the panel says the sum came to nothing. Every path that produces a value
+  // goes through here, because a quiet NaN also propagates through an add
+  // WITHOUT setting Invalid_operation -- so the status bits alone cannot catch
+  // it downstream.
+  bool guardSpecial(const decNumber& value) {
+    if (decNumberIsNaN(&value)) return fail("BAD INPUT");
+    if (decNumberIsInfinite(&value)) return fail("OVERFLOW");
+    return true;
   }
 
   // decNumber never throws; it sets bits. Reading and clearing them in one place
@@ -189,6 +218,7 @@ class Engine {
   }
 
   void pressDigit(const int d) {
+    operandLive_ = false;
     if (!entryLive_) {
       entry_[0] = '\0';
       entryDigits_ = 0;
@@ -214,6 +244,7 @@ class Engine {
   }
 
   void pressDot() {
+    operandLive_ = false;
     if (!entryLive_) {
       std::snprintf(entry_, sizeof(entry_), "0");
       entryDigits_ = 0;
@@ -252,6 +283,8 @@ class Engine {
   void pressNegate() {
     if (entryLive_) {
       entryNegative_ = !entryNegative_;
+    } else if (operandLive_) {
+      decNumberCopyNegate(&operand_, &operand_);
     } else {
       // CopyNegate, not Minus: Minus rounds under the context, and flipping a
       // sign is not an operation that should be able to change a digit.
@@ -279,7 +312,7 @@ class Engine {
         decNumberCopy(out, &rhs);
         break;
     }
-    return checkStatus();
+    return checkStatus() && guardSpecial(*out);
   }
 
   void pressOperator(const Key op) {
@@ -302,6 +335,7 @@ class Engine {
     }
     pendingOp_ = op;
     entryLive_ = false;
+    operandLive_ = false;
     repeatOp_ = Key::None;
     writePending();
     refresh();
@@ -314,7 +348,16 @@ class Engine {
       currentValue(&rhs);
       op = pendingOp_;
     } else if (repeatOp_ != Key::None) {
-      // `2 + 3 =` then `=` again: repeat the operator AND the operand.
+      // `2 + 3 =` then `=` again: repeat the operator AND the operand. If a NEW
+      // number has been typed since, it becomes the left-hand side rather than
+      // being thrown away -- `5 + 3 = 7 =` is 10, the way a TI or a Casio does
+      // it. The first version ignored the 7 and recomputed 8 + 3, which is 11,
+      // an answer no calculator anywhere gives.
+      if (entryLive_ || operandLive_) {
+        decNumber typed;
+        currentValue(&typed);
+        decNumberCopy(&acc_, &typed);
+      }
       decNumberCopy(&rhs, &repeatOperand_);
       op = repeatOp_;
     } else {
@@ -354,18 +397,18 @@ class Engine {
       if (!checkStatus()) return;
       decNumberCopy(&out, &scaled);
     }
-    // The percentage becomes the number ON SCREEN, still typed, so the pending
-    // operator can then consume it. Committing it to the accumulator instead
-    // would throw away the sum it is a percentage of.
-    writeNumber(out, entry_, sizeof(entry_));
-    entryNegative_ = entry_[0] == '-';
-    if (entryNegative_) std::memmove(entry_, entry_ + 1, std::strlen(entry_));
-    entryHasDot_ = std::strchr(entry_, '.') != nullptr;
-    entryDigits_ = 0;
-    for (const char* p = entry_; *p; ++p) {
-      if (*p >= '0' && *p <= '9') ++entryDigits_;
-    }
-    entryLive_ = true;
+    // The percentage becomes a computed OPERAND, waiting for the pending
+    // operator to consume it. It is deliberately NOT written back into the typed
+    // entry, which is what the first version did and is what broke the display's
+    // whole guarantee: writeNumber fills the full sixteen-character budget, then
+    // refresh() prepends a sign and Dot appends a point, neither of them counted.
+    // `9999999999 x 9999999999 = % % . +/-` put EIGHTEEN characters on a display
+    // that promises at most sixteen, and it only failed to clip because the
+    // widest reachable string came to 445px in a 448px box. A result is a result;
+    // it is not text somebody can carry on typing into.
+    decNumberCopy(&operand_, &out);
+    operandLive_ = true;
+    resetEntry();
     refresh();
   }
 
@@ -441,11 +484,17 @@ class Engine {
       std::snprintf(display_, sizeof(display_), "%s%s", entryNegative_ && anyDigit ? "-" : "", entry_);
       return;
     }
-    writeNumber(acc_, display_, sizeof(display_));
+    writeNumber(operandLive_ ? operand_ : acc_, display_, sizeof(display_));
   }
 
   decContext ctx_{};
   decNumber acc_{};
+  // A computed right-hand operand -- what percent produces -- waiting for the
+  // pending operator. Separate from both the typed entry and the accumulator
+  // because it is neither: it is not editable text, and committing it to acc_
+  // would throw away the sum it is a percentage OF.
+  decNumber operand_{};
+  bool operandLive_ = false;
   decNumber repeatOperand_{};
   char entry_[kTextMax] = {};
   char display_[kTextMax * 2] = {};

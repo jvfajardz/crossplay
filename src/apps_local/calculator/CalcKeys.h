@@ -41,13 +41,12 @@ enum class Key : uint8_t {
 //
 // `label` is nullptr for exactly one key, plus-minus, because not every face
 // can spell it: Jersey 25 has no U+00B1 and a glyph the face lacks draws as a
-// HOLE rather than a box. The skin supplies "+/-" there and the real sign
-// everywhere else, which is two correct calculator conventions rather than one
-// convention and one invisible key.
+// HOLE rather than a box. CalcStyle.h supplies "+/-" there, which is what a
+// keyboard-era calculator prints -- an invisible key is not a convention.
 struct KeyDef {
   Key key = Key::None;
   const char* label = nullptr;
-  bool emphasis = false;  // an operator or equals: the keys a skin sets apart
+  bool emphasis = false;  // an operator or equals: the keys drawn a weight heavier
 };
 
 inline bool isDigit(const Key k) { return k >= Key::D0 && k <= Key::D9; }

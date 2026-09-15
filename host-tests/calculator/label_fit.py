@@ -128,30 +128,24 @@ def check_cut_metrics():
     """
     src = (REPO / "src/apps_local/calculator/CalcCutMetrics.h").read_text()
     declared = {
-        m[0]: (int(m[1]), int(m[2]), int(m[3]))
-        for m in re.findall(r"constexpr CutMetrics k(\w+)Cut\{(\d+), (\d+), (\d+)\}", src)
+        m[0]: (int(m[1]), int(m[2]))
+        for m in re.findall(r"constexpr CutMetrics k(\w+)Cut\{(\d+), (\d+)\}", src)
     }
     checks = failed = 0
-    for key, (line_h, cap, widest) in sorted(declared.items()):
+    for key, (line_h, cap) in sorted(declared.items()):
         name = FILES.get(key)
         if name is None:
             failed += 1
             print(f"FAIL label_fit  CalcCutMetrics.h declares k{key}Cut and no font is mapped to it")
             continue
         font = load_font(name)
-        checks += 3
+        checks += 2
         if advance_y(name) != line_h:
             failed += 1
             print(f"FAIL label_fit  k{key}Cut says lineHeight {line_h}, {name}.h has {advance_y(name)}")
         if cap_height(font) != cap:
             failed += 1
             print(f"FAIL label_fit  k{key}Cut says capHeight {cap}, {name}.h has {cap_height(font)}")
-        # widestDigit is a CEILING: too small and a width budget computed from it
-        # under-counts, which is the direction that overflows.
-        real = widest_glyph(font, "0123456789.-e")
-        if widest < real:
-            failed += 1
-            print(f"FAIL label_fit  k{key}Cut says widestDigit {widest}, {name}.h has {real:.1f}")
     for key in sorted(set(FILES) - set(declared)):
         checks += 1
         failed += 1
@@ -203,7 +197,7 @@ def main():
     for fixed_font, text in worst:
         checks += 2
         # An error is words in the label cut and has its own budget: it only has
-        # to fit the display, not the twelve-character number bound.
+        # to fit the display, not the sixteen-character number bound.
         if not fixed_font and len(text) > MAX_CHARS:
             failed += 1
             print(f"FAIL label_fit  the engine emitted \"{text}\", {len(text)} characters, "

@@ -17,23 +17,25 @@ namespace fui = freeink::ui;
 
 namespace {
 
-// The largest of the three number cuts the string actually fits in.
+// The largest of the number cuts the string actually fits in, or -1 if none
+// does.
 //
 // MEASURED, through the renderer's own advance widths, rather than counted:
 // Jersey's digits are not tabular -- a '1' is 37px against a '0' at 57px in the
 // 56 cut -- so counting characters would step the number down a size it did not
 // need and every result would read smaller than it could.
 //
-// This can only choose badly if no rung fits, and no rung can fail to fit: the
-// ENGINE caps what it emits at calc::kMaxDisplayChars, which is set so the worst
-// string it can produce clears the panel at the smallest rung. The bound lives
-// at the source, and host-tests/calculator/label_fit.py proves it over every
-// shape the engine can emit rather than over the samples somebody thought of.
+// EVERY rung is measured, including the last. The first version measured three
+// of four and returned the fourth unchecked, and the site that drew it clamped
+// only the left edge -- so the one rung nothing verified was drawn by the one
+// call that could not say no. It is meant to be unreachable, because the engine
+// caps what it emits at calc::kMaxDisplayChars; it is checked anyway, because
+// "meant to be" is what the percent key broke.
 int rungFor(const GfxRenderer& renderer, const char* text, const int widthPx) {
-  for (int rung = 0; rung < calc::kNumberRungs - 1; ++rung) {
+  for (int rung = 0; rung < calc::kNumberRungs; ++rung) {
     if (renderer.getTextWidth(calc::numberFontFor(rung), text) <= widthPx) return rung;
   }
-  return calc::kNumberRungs - 1;
+  return -1;
 }
 
 }  // namespace
@@ -87,14 +89,27 @@ void CalculatorActivity::drawDisplay(const calc::PadGeom& g) {
   }
   y += pendingH;
 
+  // The number keeps a hair of air off the panel's edge rather than sitting
+  // flush against it: key labels are given ten per cent a side by the fit gate,
+  // and the largest element on the screen was the only thing with none.
+  const int numberWidth = d.w - calc::kNumberAir;
   const char* text = engine.display();
   // An error is words, and the number cuts have no letters in them at all -- a
   // message drawn in one is a blank display. The label cut is the smallest face
   // here that can spell one.
-  const int cut = engine.hasError() ? calc::kLabelFontId : calc::numberFontFor(rungFor(renderer, text, d.w));
+  int cut = calc::kLabelFontId;
+  if (!engine.hasError()) {
+    const int rung = rungFor(renderer, text, numberWidth);
+    // Nothing fits. The engine's bound says this cannot happen and the suite
+    // proves the bound, so if it ever does the honest thing is to say the
+    // display cannot show the number -- not to draw it through the border.
+    if (rung < 0) text = "TOO LONG";
+    cut = rung < 0 ? calc::kLabelFontId : calc::numberFontFor(rung);
+  }
   const int numberH = calc::kNumberCut.capHeight + 2 * calc::kNumberAir;
   const int tw = renderer.getTextWidth(cut, text);
-  calc::drawCapsCentered(renderer, cut, d.right() - std::min(tw, static_cast<int>(d.w)), y, numberH, text, true);
+  calc::drawCapsCentered(renderer, cut, d.right() - calc::kNumberAir / 2 - std::min(tw, numberWidth), y, numberH, text,
+                         true);
   y += numberH;
 
   // A rule under the number, not a box around it: the number is the content, and

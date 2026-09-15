@@ -2,6 +2,13 @@
 
 // The vertical facts about each cut, freestanding.
 //
+// Two numbers per cut, and only two, because only two are read: the display's
+// height is derived from the small cut's line height and the number cut's cap
+// height. A third, a "widest glyph" for counting a character budget, was carried
+// here and consumed by nothing -- the budget is measured through the renderer's
+// real advance widths instead, because Jersey's digits are not tabular and a
+// count would step every number down a size it did not need.
+//
 // They are HERE, as constants, rather than read from the font at layout time,
 // because the display's height is DERIVED from them -- it is the pending line
 // plus the number's band plus the rule, and nothing else -- and a layout derived
@@ -19,18 +26,14 @@ namespace calc {
 struct CutMetrics {
   int lineHeight = 0;  // EpdFontData::advanceY
   int capHeight = 0;   // ink height of '8', which is what the eye measures
-  // The widest glyph a NUMBER can contain, in whole pixels, rounded up. Jersey's
-  // digits are not tabular -- a '1' is 37px against a '0' at 57px in the 56 cut
-  // -- so a display budget counted in characters has to count the worst one.
-  int widestDigit = 0;
 };
 
-constexpr CutMetrics kSmallCut{42, 26, 21};
-constexpr CutMetrics kLabelCut{58, 36, 29};
-constexpr CutMetrics kFinestCut{54, 33, 27};
-constexpr CutMetrics kTinyCut{71, 43, 35};
-constexpr CutMetrics kMidCut{92, 57, 45};
-constexpr CutMetrics kNumberCut{117, 71, 57};
+constexpr CutMetrics kSmallCut{42, 26};
+constexpr CutMetrics kLabelCut{58, 36};
+constexpr CutMetrics kFinestCut{54, 33};
+constexpr CutMetrics kTinyCut{71, 43};
+constexpr CutMetrics kMidCut{92, 57};
+constexpr CutMetrics kNumberCut{117, 71};
 
 constexpr CutMetrics cutFor(const int fontId) {
   return fontId == kSmallFontId    ? kSmallCut

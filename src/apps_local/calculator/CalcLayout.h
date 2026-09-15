@@ -16,8 +16,10 @@ namespace calc {
 // What the display can ever be asked to draw.
 //
 // Not a limit imposed on the display: a limit imposed on the ENGINE, which is
-// Sixteen characters is what the smallest of
-// the four number cuts clears on this panel -- sixteen times Jersey 26's widest
+// A limit imposed on the ENGINE, because that is the only place it can be
+// guaranteed: a display cannot promise "nothing is drawn past its box" by being
+// careful about what it draws. Sixteen characters is what the smallest of the
+// four number cuts clears on this panel -- sixteen times Jersey 26's widest
 // glyph is 432px of the 448 an app owns -- so a result that obeys this can never
 // be drawn past its box, whatever it is.
 //
@@ -50,8 +52,8 @@ struct PadGeom {
 };
 
 // `body` is the activity's content rect: below the chrome, inside the margins.
-// `gap` and `displayH` come from the skin, because a lattice pad wants no gap
-// between keys and an outlined pad wants twelve pixels.
+// `gap` and `displayH` come from CalcStyle.h, which derives the height from the
+// cut metrics rather than picking it.
 inline PadGeom padGeom(const Layout& layout, const Rect16& body, const int16_t gap, const int16_t displayH) {
   PadGeom g{};
   g.gap = gap;
@@ -67,8 +69,8 @@ inline PadGeom padGeom(const Layout& layout, const Rect16& body, const int16_t g
 }
 
 // The rect of the key at `index`. Every key is one cell: the pad is uniform so
-// a lattice skin has something to tile, which is also why the plus-minus sits
-// in the corner where the iPhone puts a double-width zero.
+// the grid is uniform, which is also why the plus-minus sits in the corner where
+// the iPhone puts a double-width zero.
 inline Rect16 keyRect(const Layout& layout, const PadGeom& g, const int index) {
   const int col = index % layout.cols;
   const int row = index / layout.cols;
@@ -77,11 +79,10 @@ inline Rect16 keyRect(const Layout& layout, const PadGeom& g, const int index) {
 }
 
 // Which key a tap landed on, or -1. Derived from keyRect() and nothing else, so
-// a skin cannot move the pixels without moving the hit box with them. Where
-// there IS a gap it refuses rather than rounding into a neighbour: on a panel
+// a layout change cannot move the pixels without moving the hit box with them.
+// Where there IS a gap it refuses rather than rounding into a neighbour: on a panel
 // this slow, a tap that did the wrong thing costs more than one that did
-// nothing. A lattice skin has no gap, so every pixel of the pad belongs to a
-// key, which is the point of a lattice.
+// nothing.
 inline int keyAt(const Layout& layout, const PadGeom& g, const int x, const int y) {
   const int cells = layout.cols * layout.rows;
   for (int i = 0; i < cells; ++i) {
@@ -93,11 +94,10 @@ inline int keyAt(const Layout& layout, const PadGeom& g, const int x, const int 
 }
 
 // ---------------------------------------------------------------------------
-// One pad, five skins. The arrangement is the iPhone's, which is the pad the
-// most hands already know, with two changes that every desk calculator also
-// makes: DEL instead of a swipe to lose a digit (Casio spells it exactly that
-// way), and a plus-minus key in the corner rather than a double-width zero, so
-// the grid is uniform and a lattice skin has something to tile.
+// The pad. The arrangement is the iPhone's, which is the pad the most hands
+// already know, with two changes that every desk calculator also makes: DEL instead of a swipe to lose a digit (Casio
+// spells it exactly that way), and a plus-minus key in the corner rather than a double-width zero, so the grid is
+// uniform.
 //
 // Every label is ASCII or a codepoint the calculator's own cuts carry. NOTHING
 // is drawn from primitives: a hand-drawn division sign is why these keys looked

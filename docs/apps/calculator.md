@@ -39,23 +39,43 @@ A display cannot promise that by being careful about what it draws. It has to be
 impossible, and the only place it can be made impossible is where the string is
 produced.
 
-**`kMaxDisplayChars` is 12**, and it is a limit on the ENGINE. Twelve characters
-is what the smallest of the three number cuts clears on this panel: twelve times
-Jersey 34's widest glyph is 420px of the 448 an app owns. A result that obeys it
-cannot be drawn past its box, whatever it is. Twelve characters is a sign, ten
-digits and a point -- which is why the engine carries **ten** significant digits
-and not twelve. Ten is a normal pocket calculator; TI's display is ten.
+**`kMaxDisplayChars` is 16**, and it is a limit on the ENGINE. Sixteen characters
+is what the smallest of the four number cuts clears on this panel. Twelve of them
+is a sign, ten digits and a point, which is why the engine carries **ten**
+significant digits; the other four are for the exponent form, `-9.999999999e-99`.
 
-Above that bound the display picks the largest of three cuts the string actually
-fits in -- 56, 44, 34 -- measured through the renderer's own advance widths
-rather than counted, because **Jersey's digits are not tabular**: a `1` is 37px
-against a `0` at 57px in the 56 cut, so counting characters would step the number
-down a size it did not need and every result would read smaller than it could.
+Above that bound the display picks the largest of four cuts the string actually
+fits in -- 56, 44, 34, 26 -- **measured** through the renderer's own advance
+widths rather than counted, because Jersey's digits are not tabular: a `1` is
+37px against a `0` at 57px in the 56 cut, so counting characters would step every
+number down a size it did not need.
 
-Three rungs and not five, because the worst case is bounded: a result never lands
-in a label cut. `label_fit.py` proves it over the strings the ENGINE actually
-emits when the suite drives it to its limits, rather than over samples somebody
-thought of.
+### The claim was false once, and that is why it is checked this hard
+
+The first version of this section said the same thing and was wrong. `pressPercent`
+wrote its result back into the TYPED entry, filling the full sixteen-character
+budget -- and then `refresh()` prepended a sign and Dot appended a point, neither
+of them counted. `9999999999 x 9999999999 = % % . +/-` put **eighteen**
+characters on the panel, and it failed to clip only because the widest reachable
+string came to 445px in a 448px box. Three pixels.
+
+A cold review found it by walking the pad at random: 86 strings over the bound
+out of 627,772. The list of "worst cases" the gate had been measuring was nine
+key sequences somebody wrote down, none of them eighteen characters long.
+
+Three things changed, and each closes the hole at a different depth:
+
+- **A percent result is a RESULT.** It goes into a computed operand, not into
+  editable text. Nothing can be typed on top of a formatted string any more --
+  which also closed both routes by which Infinity and NaN used to reach the
+  display and render as `0`.
+- **The gate drives the engine instead of listing its limits.** 400,000 random
+  key presses, every distinct string captured with the cut it is really drawn in,
+  every one measured against its box. That is 250,000 checks and it is the claim
+  itself, not a sample of it.
+- **The draw site can refuse.** It measures every rung including the last -- the
+  first version measured three of four and returned the fourth unchecked -- and
+  if nothing fits it says so rather than drawing through the border.
 
 ## The symbols are type now, and that was the whole problem
 

@@ -9,7 +9,7 @@
 // Their own 0x70B1 block so they cannot collide with fontIds.h (FNV hashes of
 // generated font names) or with Toybox's 0x70B0 block.
 //
-// All five are Jersey 25, the fork's own face, cut by
+// All six are Jersey 25, the fork's own face, cut by
 // tools_local/toybox/gen_calc_fonts.sh WITH the math block -- the Toybox cuts
 // are subset to U+0020-007E, so the division, multiplication and minus signs
 // draw as NOTHING there. Jersey has had all three all along.
@@ -21,9 +21,10 @@ namespace calc {
 constexpr int kLabelFontId = 0x70B1'0001;  // Jersey 25 @28, ASCII + the math block
 constexpr int kSmallFontId = 0x70B1'0007;  // Jersey 25 @20
 
-// The display's three rungs, largest first. Three, because the number has a
-// bounded worst case and these are sized so that it always lands on one of
-// them: a result is NEVER drawn in a label cut.
+// The display's four rungs, largest first. Four, because the number has a
+// bounded worst case and these are sized so it always lands on one of them: a
+// RESULT is never drawn in a label cut, which matters because the label cut is
+// the only one with letters in it and these have none.
 constexpr int kNumberFontId = 0x70B1'0002;  // Jersey 25 @56, digits and signs only
 constexpr int kMidFontId = 0x70B1'000A;     // Jersey 25 @44
 constexpr int kTinyFontId = 0x70B1'000B;    // Jersey 25 @34

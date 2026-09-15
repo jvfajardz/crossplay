@@ -357,6 +357,64 @@ void testTheSequencesNobodyMeansToPress() {
   CHECK_TEXT(run(e, "5+++3="), "8");  // operators collapse rather than stack
 }
 
+// Everything a cold review found on 2026-09-15, each pinned so it cannot come
+// back. Every one of these passed the suite as it stood, which is the point: the
+// suite tested what I thought to test.
+void testWhatTheColdReviewFound() {
+  Engine e;
+
+  // The headline claim was false. Percent used to write its result back into the
+  // TYPED entry -- a full sixteen-character budget -- and then a sign and a point
+  // went on top, neither counted. Eighteen characters on a display that promises
+  // sixteen, saved from clipping only by the widest reachable string coming to
+  // 445px in a 448px box.
+  run(e, "9999999999x9999999999=%%.n");
+  CHECK(static_cast<int>(std::strlen(e.display())) <= kMaxDisplayChars);
+  if (static_cast<int>(std::strlen(e.display())) > kMaxDisplayChars) {
+    std::printf("  percent then dot then sign gave \"%s\", %zu characters\n", e.display(), std::strlen(e.display()));
+  }
+  // A percent result is a RESULT: a digit after it starts a new number rather
+  // than being appended to a formatted string.
+  CHECK_TEXT(run(e, "50%"), "0.5");
+  CHECK_TEXT(run(e, "50%7"), "7");
+  CHECK_TEXT(run(e, "200+10%="), "220");  // and it still feeds the pending operator
+  CHECK_TEXT(run(e, "200x10%="), "20");
+  CHECK_TEXT(run(e, "50%n"), "-0.5");  // and the sign key still reaches it
+
+  // A typed number was thrown away when equals repeated: 5 + 3 = 7 = recomputed
+  // 8 + 3 and answered 11, which no calculator anywhere gives.
+  CHECK_TEXT(run(e, "5+3=7="), "10");
+  CHECK_TEXT(run(e, "9-4=100="), "96");
+  CHECK_TEXT(run(e, "5+3=="), "11");  // with nothing typed it still repeats
+
+  // Infinity and NaN are real decNumber values whose coefficient is a single
+  // zero, so they formatted as "0" and the panel said the sum came to nothing.
+  // Both routes the review found ran through the typed entry -- digits appended
+  // to a formatted exponent, or a half-deleted one re-parsed -- and the percent
+  // fix above closed them. What stays reachable is running off the top of the
+  // exponent range, and that has to say so rather than show a number.
+  CHECK_TEXT(run(e, "9999999999x9999999999=x=x=x="), "OVERFLOW");
+  CHECK(e.hasError());
+  // And the guard is not the status bits alone: a quiet NaN propagates through
+  // an add WITHOUT setting Invalid_operation, so every value that reaches the
+  // display is checked for being special, not just every operation for failing.
+  CHECK_TEXT(run(e, "1/0="), "DIVIDE BY 0");
+
+  // CE after an error left the pending operator standing, so 5 / 0 = then CE
+  // then 3 = quietly answered 1.666666667 from an operation the user watched
+  // fail.
+  run(e, "5/0=");
+  type(e, "E3=");
+  CHECK_TEXT(e.display(), "3");
+  CHECK(!e.hasError());
+
+  // CE showed the accumulator rather than a zero: `5 + 3` then CE read as 5 + 5,
+  // and 5 + 3 CE = came to 10 where every calculator gives 5.
+  CHECK_TEXT(run(e, "5+3E"), "0");
+  CHECK_TEXT(run(e, "5+3E="), "5");
+  CHECK_TEXT(run(e, "5+3E4="), "9");
+}
+
 // An error is a wall. Letting a digit land on top of "Cannot divide by zero" is
 // how a calculator starts quietly lying: the message goes away, the broken
 // state does not.
@@ -475,8 +533,13 @@ void testNothingIsLeftOver() {
   }
   const Rect16 rightmost = keyRect(kPad, g, kPad.cols - 1);
   CHECK(b.right() - rightmost.right() < kPad.cols);
-  // And the display's own bands add up to the height it declared.
-  CHECK(displayHeight() == kSmallCut.lineHeight + kNumberCut.capHeight + 2 * kNumberAir + kRule);
+  // The display's bands have to add up to the height it declared, and this used
+  // to "check" that by restating displayHeight()'s own body -- a line that
+  // cannot fail. What CAN fail is the height being too small for what
+  // drawDisplay puts in it, so that is what is asserted: the pending line, the
+  // number's band and the rule, each named once.
+  CHECK(displayHeight() >= kSmallCut.lineHeight + kNumberCut.capHeight + kRule);
+  CHECK(displayHeight() - kSmallCut.lineHeight - kNumberCut.capHeight - kRule == 2 * kNumberAir);
 }
 
 // Whatever else changes, it stays a calculator: the ten digits, the point, the
@@ -508,7 +571,7 @@ void testEveryKeyHasALabel() {
 
 }  // namespace
 
-// The facts only the C++ side knows -- which skin uses which cut, how wide its
+// The facts only the C++ side knows -- which cut each label resolves to, how wide its
 // cells come out, and what each key says in it -- printed for label_fit.py to
 // measure against the real glyph tables. Two processes because neither side can
 // do the other's half: a host test cannot parse a font header, and a Python
@@ -529,35 +592,58 @@ void printLabelTable() {
     std::printf("RUNG %d %d\n", rung, numberFontFor(rung));
   }
 
-  // The engine's OWN output at its limits, for the script to measure. Not a list
-  // of samples somebody thought of: these are what it actually produced, so a
-  // formatting change that lengthens a result cannot slip past the gate by being
-  // a shape nobody imagined.
-  static const char* kLimits[] = {
-      "9999999999x9999999999=",              // the largest product it can reach
-      "9999999999+9999999999=",              // and the largest sum
-      "1/3=",                                // a repeating decimal, filled to capacity
-      "2/3=",                                // the same, rounded up at the last digit
-      "1/0=",                                // the longest error string
-      "0.0000000001/9999999999=",            // driven off the bottom into an exponent
-      "9999999999x9999999999=x9999999999=",  // and off the top
-      "1234567890n",                         // the widest thing that can be TYPED
-      "0.123456789n",                        // a typed fraction with a sign
-  };
+  // The engine's own output, found by DRIVING it rather than by listing what I
+  // thought its limits were.
+  //
+  // The comment here used to claim these were what the engine "actually
+  // produced", and they were nine key sequences somebody wrote down. A cold
+  // review walked the pad at random instead and found eighty-six display strings
+  // over the bound that no hand-written list contained -- the longest of them
+  // eighteen characters against a promise of sixteen. So the list is gone and
+  // this is a deterministic walk over every key, emitting every DISTINCT string
+  // the engine put on screen along the way.
   Engine engine;
-  for (const char* keys : kLimits) {
-    run(engine, keys);
-    // Which cut this string will really be drawn in, resolved the way the
-    // activity resolves it: an error is words and goes in the label cut, a
-    // result is digits and walks the number rungs.
-    std::printf("WORST %d %s\n", engine.hasError() ? kLabelFontId : 0, engine.display());
+  static char seen[4096][40];
+  static int seenCut[4096];
+  int seenCount = 0;
+  // The cut is captured WITH the string, because which one a string is drawn in
+  // is a property of the engine's state at that moment, not of the characters:
+  // an error is words in the label cut, a result is digits walking the number
+  // rungs, and measuring either in the other is a gate reporting on something
+  // the panel never does.
+  const auto remember = [&](const char* text, const int cut) {
+    if (!text[0] || seenCount >= 4096) return;
+    for (int i = 0; i < seenCount; ++i) {
+      if (std::strcmp(seen[i], text) == 0) return;
+    }
+    seenCut[seenCount] = cut;
+    std::snprintf(seen[seenCount++], 40, "%s", text);
+  };
+  static const Key kEvery[] = {
+      Key::D0,  Key::D1,     Key::D2,      Key::D3,     Key::D4,       Key::D5,         Key::D6,
+      Key::D7,  Key::D8,     Key::D9,      Key::Dot,    Key::Add,      Key::Sub,        Key::Mul,
+      Key::Div, Key::Equals, Key::Percent, Key::Negate, Key::ClearAll, Key::ClearEntry, Key::Backspace,
+  };
+  const int keyCount = static_cast<int>(sizeof(kEvery) / sizeof(kEvery[0]));
+  // A plain LCG: the walk has to be the same on every run, or a red gate is not
+  // reproducible and nobody can tell a regression from a reroll.
+  uint32_t rng = 20260915u;
+  for (int step = 0; step < 400000; ++step) {
+    rng = rng * 1664525u + 1013904223u;
+    engine.press(kEvery[(rng >> 16) % keyCount]);
+    remember(engine.display(), engine.hasError() ? kLabelFontId : 0);
     if (engine.pending()[0]) std::printf("PENDING %s\n", engine.pending());
   }
-  // And the longest pending line: a full-width operand with an operator after it.
-  run(engine, "9999999999x");
-  std::printf("PENDING %s\n", engine.pending());
-  run(engine, "0.123456789n+");
-  std::printf("PENDING %s\n", engine.pending());
+  // And the digits, typed to the cap, so the longest TYPED string is in there
+  // even if four hundred thousand random presses never happened to make it.
+  engine.press(Key::ClearAll);
+  for (int i = 0; i < 12; ++i) engine.press(Key::D9);
+  engine.press(Key::Dot);
+  engine.press(Key::Negate);
+  remember(engine.display(), 0);
+  for (int i = 0; i < seenCount; ++i) {
+    std::printf("WORST %d %s\n", seenCut[i], seen[i]);
+  }
 }
 
 int main(int argc, char** argv) {
@@ -577,6 +663,7 @@ int main(int argc, char** argv) {
   testPercentReadsThePendingOperator();
   testNegateAppliesToWhatIsOnScreen();
   testTheSequencesNobodyMeansToPress();
+  testWhatTheColdReviewFound();
   testErrorsStopEverythingButClear();
   testEveryKeyIsBigEnoughToHit();
   testEveryKeyAnswersOverItsWholeFace();

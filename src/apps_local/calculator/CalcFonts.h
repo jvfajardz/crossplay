@@ -1,6 +1,6 @@
 #pragma once
 
-// The calculator's five Jersey 25 cuts, and the two measurements drawing needs.
+// The calculator's six Jersey 25 cuts, and the two measurements drawing needs.
 //
 // New files rather than wider versions of the Toybox cuts, and that is not
 // tidiness: tools_local/toybox/gen_toybox_fonts.sh spells out that regenerating
