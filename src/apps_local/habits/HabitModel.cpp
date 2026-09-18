@@ -155,11 +155,20 @@ bool Model::deleteHabit(const Id habitId) {
   habits_.erase(std::remove_if(habits_.begin(), habits_.end(), [habitId](const Habit& v) { return v.id == habitId; }),
                 habits_.end());
   if (habits_.size() == before) return false;
-  tasks_.erase(std::remove_if(tasks_.begin(), tasks_.end(), [habitId](const Task& v) { return v.habitId == habitId; }), tasks_.end());
-  schedules_.erase(std::remove_if(schedules_.begin(), schedules_.end(), [habitId](const ScheduleRevision& v) { return v.habitId == habitId; }), schedules_.end());
-  active_.erase(std::remove_if(active_.begin(), active_.end(), [habitId](const ActiveRevision& v) { return v.habitId == habitId; }), active_.end());
-  completions_.erase(std::remove_if(completions_.begin(), completions_.end(), [habitId](const Completion& v) { return v.habitId == habitId; }), completions_.end());
-  exceptions_.erase(std::remove_if(exceptions_.begin(), exceptions_.end(), [habitId](const Exception& v) { return v.habitId == habitId; }), exceptions_.end());
+  tasks_.erase(std::remove_if(tasks_.begin(), tasks_.end(), [habitId](const Task& v) { return v.habitId == habitId; }),
+               tasks_.end());
+  schedules_.erase(std::remove_if(schedules_.begin(), schedules_.end(),
+                                  [habitId](const ScheduleRevision& v) { return v.habitId == habitId; }),
+                   schedules_.end());
+  active_.erase(std::remove_if(active_.begin(), active_.end(),
+                               [habitId](const ActiveRevision& v) { return v.habitId == habitId; }),
+                active_.end());
+  completions_.erase(std::remove_if(completions_.begin(), completions_.end(),
+                                    [habitId](const Completion& v) { return v.habitId == habitId; }),
+                     completions_.end());
+  exceptions_.erase(std::remove_if(exceptions_.begin(), exceptions_.end(),
+                                   [habitId](const Exception& v) { return v.habitId == habitId; }),
+                    exceptions_.end());
   return true;
 }
 
@@ -167,10 +176,14 @@ bool Model::deleteTask(const Id taskId) {
   const Task* task = findTask(taskId);
   if (!task) return false;
   int remaining = 0;
-  for (const auto& value : tasks_) remaining += value.habitId == task->habitId && value.id != taskId && value.retiredDay == 0;
+  for (const auto& value : tasks_)
+    remaining += value.habitId == task->habitId && value.id != taskId && value.retiredDay == 0;
   if (remaining == 0) return false;
-  tasks_.erase(std::remove_if(tasks_.begin(), tasks_.end(), [taskId](const Task& v) { return v.id == taskId; }), tasks_.end());
-  completions_.erase(std::remove_if(completions_.begin(), completions_.end(), [taskId](const Completion& v) { return v.taskId == taskId; }), completions_.end());
+  tasks_.erase(std::remove_if(tasks_.begin(), tasks_.end(), [taskId](const Task& v) { return v.id == taskId; }),
+               tasks_.end());
+  completions_.erase(std::remove_if(completions_.begin(), completions_.end(),
+                                    [taskId](const Completion& v) { return v.taskId == taskId; }),
+                     completions_.end());
   return true;
 }
 
@@ -206,7 +219,8 @@ Id Model::copyHabit(const Id habitId, const int createdDay) {
 }
 
 bool Model::moveHabit(const Id habitId, const int delta) {
-  auto found = std::find_if(habits_.begin(), habits_.end(), [habitId](const Habit& value) { return value.id == habitId; });
+  auto found =
+      std::find_if(habits_.begin(), habits_.end(), [habitId](const Habit& value) { return value.id == habitId; });
   if (found == habits_.end()) return false;
   const auto index = static_cast<int>(found - habits_.begin());
   const int target = index + delta;
@@ -220,7 +234,8 @@ bool Model::moveTask(const Id taskId, const int delta) {
   auto found = std::find_if(tasks_.begin(), tasks_.end(), [taskId](const Task& value) { return value.id == taskId; });
   if (found == tasks_.end()) return false;
   std::vector<size_t> siblings;
-  for (size_t i = 0; i < tasks_.size(); ++i) if (tasks_[i].habitId == found->habitId && tasks_[i].retiredDay == 0) siblings.push_back(i);
+  for (size_t i = 0; i < tasks_.size(); ++i)
+    if (tasks_[i].habitId == found->habitId && tasks_[i].retiredDay == 0) siblings.push_back(i);
   auto position = std::find(siblings.begin(), siblings.end(), static_cast<size_t>(found - tasks_.begin()));
   const int index = static_cast<int>(position - siblings.begin());
   const int target = index + delta;
@@ -241,7 +256,8 @@ void Model::clear() {
 }
 
 bool Model::restoreHabit(const Habit& habit) {
-  if (habit.id == kInvalidId || !validName(habit.name) || habits_.size() >= kMaxHabits || findHabit(habit.id)) return false;
+  if (habit.id == kInvalidId || !validName(habit.name) || habits_.size() >= kMaxHabits || findHabit(habit.id))
+    return false;
   Habit clean = habit;
   clean.name = truncateUtf8(clean.name);
   habits_.push_back(clean);
@@ -289,7 +305,7 @@ bool Model::restoreException(const Exception& exception) {
   return true;
 }
 
-bool Model::isApplicable(const Id habitId, const int day) const {
+bool Model::isActive(const Id habitId, const int day) const {
   const Habit* habit = findHabit(habitId);
   if (!habit || day < habit->createdDay) return false;
   bool active = false;
@@ -300,7 +316,10 @@ bool Model::isApplicable(const Id habitId, const int day) const {
       activeSince = revision.effectiveDay;
     }
   }
-  if (!active) return false;
+  return active;
+}
+
+uint8_t Model::scheduleMask(const Id habitId, const int day) const {
   uint8_t mask = kAllWeekdays;
   int scheduleSince = -2147483647;
   for (const auto& revision : schedules_) {
@@ -309,7 +328,12 @@ bool Model::isApplicable(const Id habitId, const int day) const {
       scheduleSince = revision.effectiveDay;
     }
   }
-  return (mask & weekdayBit(weekdayMonday0(day))) != 0;
+  return mask;
+}
+
+bool Model::isApplicable(const Id habitId, const int day) const {
+  if (!isActive(habitId, day)) return false;
+  return (scheduleMask(habitId, day) & weekdayBit(weekdayMonday0(day))) != 0;
 }
 
 bool Model::isTaskActive(const Id taskId, const int day) const {
