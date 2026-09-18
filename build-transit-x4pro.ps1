@@ -5,9 +5,15 @@ $ErrorActionPreference = 'Stop'
 $env:PYTHONUTF8 = '1'
 
 $project = $PSScriptRoot
-$pio = Join-Path $env:USERPROFILE '.platformio\penv\Scripts\platformio.exe'
-$python = Join-Path $env:USERPROFILE '.platformio\penv\Scripts\python.exe'
-$esptool = Join-Path $env:USERPROFILE '.platformio\packages\tool-esptoolpy\esptool.py'
+$platformioCore = if ($env:PLATFORMIO_CORE_DIR) {
+    $env:PLATFORMIO_CORE_DIR
+}
+else {
+    Join-Path $env:USERPROFILE '.platformio'
+}
+$pio = Join-Path $platformioCore 'penv\Scripts\platformio.exe'
+$python = Join-Path $platformioCore 'penv\Scripts\python.exe'
+$esptool = Join-Path $platformioCore 'packages\tool-esptoolpy\esptool.py'
 $build = Join-Path $project '.pio\build\x4pro'
 $dist = Join-Path $project 'dist'
 $image = Join-Path $dist 'crossplay-transit-test-x4pro-full.bin'
