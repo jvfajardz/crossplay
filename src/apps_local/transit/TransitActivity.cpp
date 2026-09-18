@@ -309,13 +309,12 @@ bool TransitActivity::fetchTransitous(const char* stopId, const char* route, con
     const std::tm* value = std::gmtime(&notBefore);
     if (value == nullptr) return false;
     utc = *value;
-    std::snprintf(url, sizeof(url),
-                  "https://api.transitous.org/api/v1/stoptimes?stopId=%s&n=%d&time=%04d-%02d-%02dT%02d%%3A%02d%%3A%02dZ",
-                  stopId, resultLimit, utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday, utc.tm_hour, utc.tm_min,
-                  utc.tm_sec);
+    std::snprintf(
+        url, sizeof(url),
+        "https://api.transitous.org/api/v1/stoptimes?stopId=%s&n=%d&time=%04d-%02d-%02dT%02d%%3A%02d%%3A%02dZ", stopId,
+        resultLimit, utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday, utc.tm_hour, utc.tm_min, utc.tm_sec);
   } else {
-    std::snprintf(url, sizeof(url), "https://api.transitous.org/api/v1/stoptimes?stopId=%s&n=%d", stopId,
-                  resultLimit);
+    std::snprintf(url, sizeof(url), "https://api.transitous.org/api/v1/stoptimes?stopId=%s&n=%d", stopId, resultLimit);
   }
   std::string response;
   response.reserve(24u * 1024u);
