@@ -11,6 +11,34 @@ floor stays the X4 Pro -- two side keys plus touch; see
 upstream's document and is kept verbatim so it merges cleanly. It says
 interactive apps and games are out of scope. For this fork they are the point.
 
+## X4 Pro custom-app feasibility gate
+
+Before designing or implementing any custom X4 Pro app, read and apply
+[docs/X4PRO_APP_GUIDE.md](docs/X4PRO_APP_GUIDE.md). Compare every requested
+feature with its display, font/glyph, memory, network, time, e-ink interaction,
+preview, and build constraints. Raise infeasible or high-risk requirements
+before implementation and propose the smallest safe alternative. A constraint
+may change only deliberately, with its technical reason and user-visible
+tradeoff recorded in the guide.
+
+When the user starts a task with “Let's create a new project,” treat it as a
+request for a new independent CrossPlay app in this repository. If missing, ask
+for only its name and one-sentence purpose, then follow this branch model:
+
+- keep `xteink` identical to `upstream/xteink`;
+- keep these shared rules on `project-rules`, based on `xteink`;
+- create `app-<name>` independently from `xteink` and merge `project-rules`
+  before app work begins;
+- never base one app branch on another app branch;
+- keep app code under `src/apps_local/<name>/` with minimal shared wiring;
+- use `custom-apps` only to combine hardware-tested apps into one firmware;
+- never commit generated firmware or `dist/`.
+
+For visual apps, review a calibrated preview before flashing. Build only the
+explicit `x4pro` target, validate the merged image and checksum, and wait for
+hardware confirmation before finalizing or integrating the app. After the user
+confirms it, push the standalone branch and merge it into `custom-apps`.
+
 ## What this fork is for
 
 Reading stays the primary purpose of the device, and the reading experience is
