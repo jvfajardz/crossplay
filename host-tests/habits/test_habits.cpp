@@ -1,8 +1,8 @@
 #include <cstdio>
 #include <string>
 
-#include "../../src/apps_local/habits/HabitModel.h"
 #include "../../src/apps_local/habits/HabitCsvStore.h"
+#include "../../src/apps_local/habits/HabitModel.h"
 #include "../../src/apps_local/habits/HabitStats.h"
 
 namespace {
@@ -41,8 +41,7 @@ void testScheduleAndStates() {
   check(model.setSchedule(id, monday, habits::weekdayBit(0) | habits::weekdayBit(2) | habits::weekdayBit(4)),
         "weekday schedule is accepted");
   check(model.dayState(id, monday, monday) == habits::DayState::Empty, "scheduled day starts empty");
-  check(model.dayState(id, monday + 1, monday + 1) == habits::DayState::NotApplicable,
-        "unscheduled weekday is blank");
+  check(model.dayState(id, monday + 1, monday + 1) == habits::DayState::NotApplicable, "unscheduled weekday is blank");
   const auto second = model.addTask(id, "Pack bag", monday);
   check(second != habits::kInvalidId, "second task is created");
   check(model.setTaskComplete(id, model.tasks()[0].id, monday, true), "first task can be checked");
@@ -52,8 +51,7 @@ void testScheduleAndStates() {
   check(model.setSkipped(id, monday, true), "day can be skipped");
   check(model.dayState(id, monday, monday) == habits::DayState::Skipped, "skip overrides visible completion");
   check(model.setSkipped(id, monday, false), "day can be unskipped");
-  check(model.dayState(id, monday, monday) == habits::DayState::Complete,
-        "unskip restores underlying completion");
+  check(model.dayState(id, monday, monday) == habits::DayState::Complete, "unskip restores underlying completion");
   check(model.dayState(id, monday + 14, monday) == habits::DayState::Future, "future applicable day has no symbol");
 }
 
@@ -65,6 +63,14 @@ void testHistoricalScheduleAndStats() {
   model.setTaskComplete(id, model.tasks()[0].id, monday, true);
   model.setSkipped(id, monday + 1, true);
   model.setSchedule(id, monday + 7, habits::weekdayBit(0));
+
+  check(model.scheduleMask(id, monday + 2) == habits::kAllWeekdays, "historical schedule query returns the old mask");
+  check(model.scheduleMask(id, monday + 9) == habits::weekdayBit(0), "historical schedule query returns the new mask");
+  check(model.isActive(id, monday + 9), "habit is active before archive");
+  model.setActive(id, monday + 10, false);
+  check(!model.isActive(id, monday + 10), "habit is inactive from its archive date");
+  model.setActive(id, monday + 11, true);
+  check(model.isActive(id, monday + 11), "archived habit can be restored");
 
   check(model.isApplicable(id, monday + 2), "old schedule remains effective historically");
   check(!model.isApplicable(id, monday + 9), "new schedule governs later history");

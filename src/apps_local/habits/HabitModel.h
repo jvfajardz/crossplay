@@ -89,6 +89,8 @@ class Model {
   bool restoreException(const Exception& exception);
 
   bool isApplicable(Id habitId, int day) const;
+  bool isActive(Id habitId, int day) const;
+  uint8_t scheduleMask(Id habitId, int day) const;
   bool isTaskActive(Id taskId, int day) const;
   bool isTaskComplete(Id habitId, Id taskId, int day) const;
   bool isSkipped(Id habitId, int day) const;

@@ -23,6 +23,7 @@
 #include "forehead/ForeheadActivity.h"
 #include "go/GoActivity.h"
 #include "habits/HabitsActivity.h"
+#include "habits/HabitsIcon.h"
 #include "hackernews/HackerNewsActivity.h"
 #include "insider/InsiderActivity.h"
 #include "instapaper/InstapaperActivity.h"
@@ -74,7 +75,7 @@ constexpr shelf::Item kGames[] = {
     {"GO", &icon_go_32, &GoActivity::create},
 };
 constexpr shelf::Item kApps[] = {
-    {"HABITS", &icon_study_32, &HabitsActivity::create},
+    {"HABITS", &icon_habits_32, &HabitsActivity::create},
     {"STUDY", &icon_study_32, &StudyActivity::create},
     {"HACKER NEWS", &icon_hackernews_32, &HackerNewsActivity::create},
     {"XKCD", &icon_xkcd_32, &XkcdActivity::create},

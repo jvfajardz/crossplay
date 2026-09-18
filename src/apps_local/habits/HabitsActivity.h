@@ -8,8 +8,7 @@
 
 class HabitsActivity final : public Activity {
  public:
-  HabitsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-      : Activity("Habits", renderer, mappedInput) {}
+  HabitsActivity(GfxRenderer& renderer, MappedInputManager& mappedInput) : Activity("Habits", renderer, mappedInput) {}
   static std::unique_ptr<Activity> create(GfxRenderer& renderer, MappedInputManager& mappedInput);
 
   void onEnter() override;
@@ -19,7 +18,7 @@ class HabitsActivity final : public Activity {
   uint32_t surfaceMeaning() const override;
 
  private:
-  enum class View : uint8_t { Habits, Detail, Schedule, Stats, Error };
+  enum class View : uint8_t { Habits, Archived, Detail, Schedule, Stats, Error };
 
   bool load();
   bool save();
@@ -33,12 +32,14 @@ class HabitsActivity final : public Activity {
   void selectDateAt(int x, int y);
   int today() const;
   habits::Id selectedHabitId() const;
+  std::vector<habits::Id> listedHabitIds() const;
   habits::Id selectedTaskId() const;
   uint8_t selectedScheduleMask() const;
   void clampSelections();
   void markDirty(bool immediate = false);
 
   void drawHabits();
+  void drawArchived();
   void drawDetail();
   void drawSchedule();
   void drawStats();
@@ -58,6 +59,7 @@ class HabitsActivity final : public Activity {
   int scheduleRow_ = 0;
   bool dirty_ = false;
   bool clockValid_ = true;
+  bool archivedContext_ = false;
   std::string error_;
 
   int holdX_ = -1;
