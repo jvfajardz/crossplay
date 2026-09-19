@@ -21,9 +21,13 @@ before implementation and propose the smallest safe alternative. A constraint
 may change only deliberately, with its technical reason and user-visible
 tradeoff recorded in the guide.
 
-When the user starts a task with “Let's create a new project,” treat it as a
-request for a new independent CrossPlay app in this repository. If missing, ask
-for only its name and one-sentence purpose, then follow this branch model:
+When the user says **“Start a new X4 app”** (or starts a task with “Let's create
+a new project”), treat it as a request for a new independent CrossPlay app in
+this repository. Before taking any project action, read `AGENTS.md`, this file,
+`CONTRIBUTING.md` when it exists on the current branch, and
+`docs/X4PRO_APP_GUIDE.md`. Summarize the hard X4 Pro constraints and the branch
+plan, then ask for only the app name and its one-sentence purpose if either is
+missing. Follow this branch model:
 
 - keep `xteink` identical to `upstream/xteink`;
 - keep these shared rules on `project-rules`, based on `xteink`;
