@@ -28,6 +28,7 @@ class HabitsActivity final : public Activity {
   void showHabitMenu(habits::Id id);
   void showTaskMenu(habits::Id id);
   void showDateMenu(int day);
+  void openDayTasks();
   void changeMonth(int delta);
   void selectDateAt(int x, int y);
   int today() const;
@@ -36,6 +37,8 @@ class HabitsActivity final : public Activity {
   habits::Id selectedTaskId() const;
   uint8_t selectedScheduleMask() const;
   void clampSelections();
+  int activeTaskCount() const;
+  int visibleTaskRows() const;
   void markDirty(bool immediate = false);
 
   void drawHabits();
@@ -43,6 +46,7 @@ class HabitsActivity final : public Activity {
   void drawDetail();
   void drawSchedule();
   void drawStats();
+  void drawDayTasksPopup();
   void drawDayMark(int x, int y, int size, habits::DayState state) const;
   void drawTextFit(int font, int x, int y, int width, const std::string& text, bool ink = true) const;
 
@@ -60,6 +64,7 @@ class HabitsActivity final : public Activity {
   bool dirty_ = false;
   bool clockValid_ = true;
   bool archivedContext_ = false;
+  bool dayTasksOpen_ = false;
   std::string error_;
 
   int holdX_ = -1;

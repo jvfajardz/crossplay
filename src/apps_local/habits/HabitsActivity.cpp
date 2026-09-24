@@ -172,12 +172,26 @@ habits::Id HabitsActivity::selectedTaskId() const {
   return habits::kInvalidId;
 }
 
-void HabitsActivity::clampSelections() {
-  habitRow_ = std::max(0, std::min(habitRow_, static_cast<int>(listedHabitIds().size())));
+int HabitsActivity::activeTaskCount() const {
   int count = 0;
   for (const auto& task : model_.tasks())
     count += task.habitId == selectedHabitId() && model_.isTaskActive(task.id, selectedDay_);
-  taskRow_ = std::max(0, std::min(taskRow_, count));
+  return count;
+}
+
+int HabitsActivity::visibleTaskRows() const {
+  return std::max(1, (renderer.getScreenHeight() - 38 - (kCalendarTop + kCalendarSide)) / kRowH);
+}
+
+void HabitsActivity::clampSelections() {
+  habitRow_ = std::max(0, std::min(habitRow_, static_cast<int>(listedHabitIds().size())));
+  const int count = activeTaskCount();
+  const int lastRow = std::max(0, archivedContext_ ? count - 1 : count);
+  taskRow_ = std::max(0, std::min(taskRow_, lastRow));
+  const int rows = visibleTaskRows();
+  if (taskRow_ < taskScroll_) taskScroll_ = taskRow_;
+  if (taskRow_ >= taskScroll_ + rows) taskScroll_ = taskRow_ - rows + 1;
+  taskScroll_ = std::max(0, std::min(taskScroll_, std::max(0, lastRow - rows + 1)));
 }
 
 void HabitsActivity::editName(const bool task, const habits::Id id, const std::string& initial) {
@@ -316,13 +330,25 @@ void HabitsActivity::showTaskMenu(const habits::Id id) {
 void HabitsActivity::showDateMenu(const int day) {
   const habits::Id id = selectedHabitId();
   const bool skipped = model_.isSkipped(id, day);
-  const char* options[] = {skipped ? "UNSKIP DAY" : "SKIP DAY"};
-  popup_.show("DATE OPTIONS", options, 1, 0, [this, id, day, skipped](int) {
-    model_.setSkipped(id, day, !skipped);
-    markDirty(true);
+  const char* options[] = {skipped ? "UNSKIP DAY" : "SKIP DAY", "TASK LIST"};
+  popup_.show("DATE OPTIONS", options, 2, 0, [this, id, day, skipped](const int choice) {
+    if (choice == 0) {
+      model_.setSkipped(id, day, !skipped);
+      markDirty(true);
+    } else {
+      selectedDay_ = day;
+      openDayTasks();
+    }
     requestUpdate();
   });
   requestUpdate();
+}
+
+void HabitsActivity::openDayTasks() {
+  dayTasksOpen_ = true;
+  taskRow_ = 0;
+  taskScroll_ = 0;
+  clampSelections();
 }
 
 uint8_t HabitsActivity::selectedScheduleMask() const {
@@ -383,12 +409,60 @@ void HabitsActivity::loop() {
     return;
   }
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    if (dayTasksOpen_) {
+      dayTasksOpen_ = false;
+      requestUpdate();
+      return;
+    }
     if (view_ == View::Habits || view_ == View::Error)
       shelf::leave(renderer, mappedInput);
     else {
       view_ = archivedContext_ ? View::Archived : View::Habits;
       archivedContext_ = false;
       habitRow_ = 0;
+      requestUpdate();
+    }
+    return;
+  }
+
+  if (dayTasksOpen_) {
+    const auto swipe = mappedInput.wasSwipe();
+    const int direction = swipe == MappedInputManager::SwipeDir::Up                          ? 1
+                          : swipe == MappedInputManager::SwipeDir::Down                      ? -1
+                          : mappedInput.wasReleased(MappedInputManager::Button::NavPrevious) ? -1
+                          : mappedInput.wasReleased(MappedInputManager::Button::NavNext)     ? 1
+                                                                                             : 0;
+    if (direction) {
+      taskRow_ += direction;
+      clampSelections();
+      requestUpdate();
+      return;
+    }
+    int taskX = 0, taskY = 0;
+    if (mappedInput.wasScreenTapped(taskX, taskY) && surfaceRevealed()) {
+      if (taskY < 190 || taskY >= renderer.getScreenHeight() - 62) {
+        dayTasksOpen_ = false;
+      } else {
+        taskRow_ = taskScroll_ + (taskY - 190) / kRowH;
+        clampSelections();
+        const auto task = selectedTaskId();
+        if (task != habits::kInvalidId && selectedDay_ <= today() &&
+            !model_.isSkipped(selectedHabitId(), selectedDay_)) {
+          model_.setTaskComplete(selectedHabitId(), task, selectedDay_,
+                                 !model_.isTaskComplete(selectedHabitId(), task, selectedDay_));
+          markDirty();
+        }
+      }
+      requestUpdate();
+      return;
+    }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      const auto task = selectedTaskId();
+      if (task != habits::kInvalidId && selectedDay_ <= today() && !model_.isSkipped(selectedHabitId(), selectedDay_)) {
+        model_.setTaskComplete(selectedHabitId(), task, selectedDay_,
+                               !model_.isTaskComplete(selectedHabitId(), task, selectedDay_));
+        markDirty();
+      }
       requestUpdate();
     }
     return;
@@ -423,8 +497,9 @@ void HabitsActivity::loop() {
 
   if (view_ == View::Detail) {
     const auto swipe = mappedInput.wasSwipe();
-    if (swipe == MappedInputManager::SwipeDir::Left || swipe == MappedInputManager::SwipeDir::Right) {
-      changeMonth(swipe == MappedInputManager::SwipeDir::Left ? 1 : -1);
+    if (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) {
+      taskRow_ += swipe == MappedInputManager::SwipeDir::Up ? 1 : -1;
+      clampSelections();
       requestUpdate();
       return;
     }
@@ -457,9 +532,9 @@ void HabitsActivity::loop() {
       }
       requestUpdate();
     } else if (view_ == View::Detail) {
-      if (y < kCalendarTop + kCalendarHeader && x < 100)
+      if (y >= kCalendarTop && y < kCalendarTop + kCalendarHeader && x < 150)
         changeMonth(-1);
-      else if (y < kCalendarTop + kCalendarHeader && x > renderer.getScreenWidth() - 100)
+      else if (y >= kCalendarTop && y < kCalendarTop + kCalendarHeader && x > renderer.getScreenWidth() - 150)
         changeMonth(1);
       else if (y < kCalendarTop + kCalendarSide)
         selectDateAt(x, y);
@@ -501,7 +576,7 @@ void HabitsActivity::loop() {
     else if (view_ == View::Archived)
       habitRow_ += direction;
     else if (view_ == View::Detail)
-      changeMonth(direction);
+      taskRow_ += direction;
     else if (view_ == View::Schedule)
       scheduleRow_ = std::max(0, std::min(7, scheduleRow_ + direction));
     clampSelections();
@@ -617,7 +692,9 @@ void HabitsActivity::drawDetail() {
   const int cellW = kCalendarSide / 7;
   const int cellH = (kCalendarSide - kCalendarHeader - kWeekHeader) / 6;
   char title[40];
-  snprintf(title, sizeof(title), "<  %s %d  >", monthName(shownMonth_), shownYear_);
+  snprintf(title, sizeof(title), "%s %d", monthName(shownMonth_), shownYear_);
+  renderer.drawText(toybox::kButtonFontId, 72, kCalendarTop + 16, "<", true);
+  renderer.drawText(toybox::kButtonFontId, renderer.getScreenWidth() - 84, kCalendarTop + 16, ">", true);
   renderer.drawText(toybox::kButtonFontId,
                     (renderer.getScreenWidth() - renderer.getTextWidth(toybox::kButtonFontId, title)) / 2,
                     kCalendarTop + 16, title, true);
@@ -657,18 +734,57 @@ void HabitsActivity::drawDetail() {
     if (task.habitId != habitId || !model_.isTaskActive(task.id, selectedDay_)) continue;
     if (row++ < taskScroll_) continue;
     if (y + kRowH > renderer.getScreenHeight() - 38) break;
-    renderer.drawRect(16, y + 11, 31, 31, 4, true);
+    const bool selected = row - 1 == taskRow_;
+    if (selected) renderer.fillRect(10, y + 2, renderer.getScreenWidth() - 20, kRowH - 4, true);
+    renderer.drawRect(16, y + 11, 31, 31, 4, !selected);
     if (model_.isTaskComplete(habitId, task.id, selectedDay_)) {
       for (int offset = 0; offset < 3; ++offset) {
-        renderer.drawLine(20, y + 27 + offset, 29, y + 36 + offset, true);
-        renderer.drawLine(29, y + 36 + offset, 43, y + 16 + offset, true);
+        renderer.drawLine(20, y + 27 + offset, 29, y + 36 + offset, !selected);
+        renderer.drawLine(29, y + 36 + offset, 43, y + 16 + offset, !selected);
       }
     }
-    drawTextFit(toybox::kButtonFontId, 58, y + 15, renderer.getScreenWidth() - 72, task.name);
+    drawTextFit(toybox::kButtonFontId, 58, y + 15, renderer.getScreenWidth() - 72, task.name, !selected);
     y += kRowH;
   }
-  if (!archivedContext_ && y + kRowH <= renderer.getScreenHeight() - 38)
-    renderer.drawText(toybox::kButtonFontId, 24, y + 15, "+ ADD TASK", true);
+  if (!archivedContext_ && taskScroll_ <= activeTaskCount() && y + kRowH <= renderer.getScreenHeight() - 38) {
+    const bool selected = taskRow_ == activeTaskCount();
+    if (selected) renderer.fillRect(10, y + 2, renderer.getScreenWidth() - 20, kRowH - 4, true);
+    renderer.drawText(toybox::kButtonFontId, 24, y + 15, "+ ADD TASK", !selected);
+  }
+}
+
+void HabitsActivity::drawDayTasksPopup() {
+  const int left = 18;
+  const int top = 128;
+  const int width = renderer.getScreenWidth() - 36;
+  const int bottom = renderer.getScreenHeight() - 54;
+  renderer.fillRect(left, top, width, bottom - top, false);
+  renderer.drawRect(left, top, width, bottom - top, 3, true);
+  char heading[48];
+  int year = 0;
+  unsigned month = 0, day = 0;
+  habits::civilFromDays(selectedDay_, year, month, day);
+  snprintf(heading, sizeof(heading), "TASK LIST  %u %s %d", day, monthName(month), year);
+  drawTextFit(toybox::kButtonFontId, left + 18, top + 16, width - 36, heading);
+  renderer.fillRect(left + 10, 178, width - 20, 2, true);
+  int y = 190;
+  int row = 0;
+  for (const auto& task : model_.tasks()) {
+    if (task.habitId != selectedHabitId() || !model_.isTaskActive(task.id, selectedDay_)) continue;
+    if (row < taskScroll_) {
+      ++row;
+      continue;
+    }
+    if (y + kRowH > bottom - 8) break;
+    const bool selected = row == taskRow_;
+    if (selected) renderer.fillRect(left + 8, y + 2, width - 16, kRowH - 4, true);
+    renderer.drawRect(left + 16, y + 11, 31, 31, 4, !selected);
+    if (model_.isTaskComplete(selectedHabitId(), task.id, selectedDay_))
+      renderer.fillRect(left + 22, y + 17, 19, 19, !selected);
+    drawTextFit(toybox::kButtonFontId, left + 58, y + 15, width - 76, task.name, !selected);
+    ++row;
+    y += kRowH;
+  }
 }
 
 void HabitsActivity::drawSchedule() {
@@ -690,11 +806,11 @@ void HabitsActivity::drawSchedule() {
 void HabitsActivity::drawStats() {
   const auto stats = habits::summarize(model_, selectedHabitId(), today() - 364, today(), today());
   char line[96];
-  int y = kCalendarTop + 20;
+  int y = kCalendarTop + 8;
   auto draw = [&](const char* label, const int value) {
     snprintf(line, sizeof(line), "%s  %d", label, value);
     renderer.drawText(toybox::kUiFontId, 28, y, line, true);
-    y += 58;
+    y += 38;
   };
   draw("COMPLETE DAYS", stats.completeDays);
   draw("PARTIAL DAYS", stats.partialDays);
@@ -702,8 +818,33 @@ void HabitsActivity::drawStats() {
   draw("SKIPPED DAYS", stats.skippedDays);
   draw("COMPLETE DAY %", stats.completeDayPercent());
   draw("TASK %", stats.taskPercent());
-  y += 18;
-  renderer.drawText(toybox::kTileFontId, 28, y, "LAST 12 MONTHS / CURRENT MONTH PARTIAL", true);
+  y += 10;
+  renderer.drawText(toybox::kTileFontId, 28, y, "MONTHLY COMPLETION - LAST 12 MONTHS", true);
+  const int chartTop = y + 34;
+  const int chartBottom = renderer.getScreenHeight() - 62;
+  const int chartHeight = chartBottom - chartTop;
+  renderer.drawLine(28, chartBottom, renderer.getScreenWidth() - 20, chartBottom, true);
+  int monthYear = shownYear_;
+  int month = static_cast<int>(shownMonth_) - 11;
+  while (month <= 0) {
+    month += 12;
+    --monthYear;
+  }
+  for (int i = 0; i < 12; ++i) {
+    const int first = habits::daysFromCivil(monthYear, static_cast<unsigned>(month), 1);
+    const int last = first + daysInMonth(monthYear, static_cast<unsigned>(month)) - 1;
+    const auto monthly = habits::summarize(model_, selectedHabitId(), first, last, today());
+    const int percent = std::max(0, monthly.completeDayPercent());
+    const int barHeight = chartHeight * percent / 100;
+    const int x = 32 + i * 36;
+    if (barHeight > 0) renderer.fillRect(x, chartBottom - barHeight, 22, barHeight, true);
+    char label[2] = {monthName(static_cast<unsigned>(month))[0], '\0'};
+    renderer.drawText(toybox::kTileFontId, x + 6, chartBottom + 7, label, true);
+    if (++month == 13) {
+      month = 1;
+      ++monthYear;
+    }
+  }
 }
 
 void HabitsActivity::render(RenderLock&&) {
@@ -742,6 +883,7 @@ void HabitsActivity::render(RenderLock&&) {
   else
     UITheme::drawCenteredWrappedText(renderer, Rect{20, 90, width - 40, renderer.getScreenHeight() - 150},
                                      toybox::kUiFontId, error_.c_str(), 5);
+  if (dayTasksOpen_) drawDayTasksPopup();
   const auto labels = view_ == View::Detail ? mappedInput.mapLabels("Back", "Toggle", "Previous", "Next")
                                             : mappedInput.mapLabels("Back", "Select", "Up", "Down");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
