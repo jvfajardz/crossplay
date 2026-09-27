@@ -26,6 +26,9 @@ foreach ($tool in @($pio, $python, $esptool)) {
 
 Push-Location $project
 try {
+    & (Join-Path $project 'host-tests\custom_apps\test_release_gate.ps1') -LiveTransit
+    if ($LASTEXITCODE -ne 0) { throw "Custom-app regression gate failed with exit code $LASTEXITCODE" }
+
     & $pio run -e x4pro
     if ($LASTEXITCODE -ne 0) { throw "X4 Pro build failed with exit code $LASTEXITCODE" }
 
