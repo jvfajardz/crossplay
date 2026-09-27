@@ -30,7 +30,7 @@ class HabitsActivity final : public Activity {
   void showDateMenu(int day);
   void openDayTasks();
   void changeMonth(int delta);
-  void selectDateAt(int x, int y);
+  bool selectDateAt(int x, int y);
   int today() const;
   habits::Id selectedHabitId() const;
   std::vector<habits::Id> listedHabitIds() const;
