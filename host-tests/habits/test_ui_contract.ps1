@@ -3,6 +3,7 @@ $activity = Get-Content -Raw "$PSScriptRoot\..\..\src\apps_local\habits\HabitsAc
 $header = Get-Content -Raw "$PSScriptRoot\..\..\src\apps_local\habits\HabitsActivity.h"
 $model = Get-Content -Raw "$PSScriptRoot\..\..\src\apps_local\habits\HabitModel.h"
 $shelf = Get-Content -Raw "$PSScriptRoot\..\..\src\apps_local\Shelf.cpp"
+$icon = Get-Content -Raw "$PSScriptRoot\..\..\src\apps_local\habits\HabitsIcon.h"
 
 $checks = [ordered]@{
   'archived view exists' = $header -match 'Archived'
@@ -12,10 +13,13 @@ $checks = [ordered]@{
   'detail buttons scroll tasks' = $activity -match 'View::Detail\)[\s\r\n]+taskRow_ \+= direction'
   'detail supports vertical task swipe' = $activity -match 'SwipeDir::Up' -and $activity -match 'SwipeDir::Down'
   'date menu offers task list' = $activity -match '"TASK LIST"'
+  'held calendar cell becomes the selected date' = $activity -match 'selectDateAt\(hx, hy\)\)[\s\r\n]+showDateMenu\(selectedDay_\)'
+  'skip mutation failure is handled' = $activity -match 'if \(!model_\.setSkipped\(id, day, !skipped\)\)'
   'statistics draw monthly bars' = $activity -match 'MONTHLY COMPLETION' -and $activity -match 'barHeight'
   'task rows use the compact button font' = $activity -match 'drawTextFit\(toybox::kButtonFontId[^\r\n]+task\.name'
   'completed day is a solid mark' = $activity -match 'DayState::Complete\) renderer\.fillRoundedRect\(x, y, size, size'
   'habits use a dedicated icon' = $shelf -match '"HABITS", &icon_habits_32'
+  'habits icon is generated from the Lucide flexed biceps source' = $icon -match 'lucide: biceps-flexed'
 }
 
 $failed = @($checks.GetEnumerator() | Where-Object { -not $_.Value })

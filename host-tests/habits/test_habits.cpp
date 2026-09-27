@@ -28,7 +28,10 @@ void testCreationAndNames() {
   check(model.renameHabit(id, "Hydrate"), "habit can be renamed");
   check(model.tasks()[0].name == "Drink Water", "task name remains independent");
 
-  const std::string longUtf8 = "123456789012345678901234567890123456789Ã©Z";
+  const std::string longUtf8 =
+      "12345678901234567890123456789012345678"
+      "\xC3\xA9"
+      "Z";
   check(habits::truncateUtf8(longUtf8, 40).size() == 40, "name is capped at 40 bytes");
   check(habits::truncateUtf8(longUtf8, 40).back() != static_cast<char>(0xc3),
         "UTF-8 truncation never leaves a partial code point");

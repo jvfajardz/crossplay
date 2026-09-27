@@ -333,7 +333,12 @@ void HabitsActivity::showDateMenu(const int day) {
   const char* options[] = {skipped ? "UNSKIP DAY" : "SKIP DAY", "TASK LIST"};
   popup_.show("DATE OPTIONS", options, 2, 0, [this, id, day, skipped](const int choice) {
     if (choice == 0) {
-      model_.setSkipped(id, day, !skipped);
+      if (!model_.setSkipped(id, day, !skipped)) {
+        const char* notice[] = {"OK"};
+        popup_.show("DAY CANNOT BE SKIPPED", notice, 1, 0, [](const int) {});
+        requestUpdate();
+        return;
+      }
       markDirty(true);
     } else {
       selectedDay_ = day;
@@ -387,10 +392,10 @@ void HabitsActivity::changeMonth(const int delta) {
   taskRow_ = taskScroll_ = 0;
 }
 
-void HabitsActivity::selectDateAt(const int x, const int y) {
+bool HabitsActivity::selectDateAt(const int x, const int y) {
   const int gridTop = kCalendarTop + kCalendarHeader + kWeekHeader;
   if (x < kCalendarLeft || x >= kCalendarLeft + kCalendarSide || y < gridTop || y >= kCalendarTop + kCalendarSide)
-    return;
+    return false;
   const int cellW = kCalendarSide / 7;
   const int cellH = (kCalendarSide - kCalendarHeader - kWeekHeader) / 6;
   const int column = (x - kCalendarLeft) / cellW;
@@ -401,6 +406,7 @@ void HabitsActivity::selectDateAt(const int x, const int y) {
   habits::civilFromDays(selectedDay_, shownYear_, shownMonth_, selectedDate);
   taskRow_ = taskScroll_ = 0;
   requestUpdate();
+  return true;
 }
 
 void HabitsActivity::loop() {
@@ -485,7 +491,7 @@ void HabitsActivity::loop() {
           showHabitMenu(selectedHabitId());
         }
       } else if (view_ == View::Detail) {
-        if (hy < kCalendarTop + kCalendarSide && !archivedContext_)
+        if (!archivedContext_ && selectDateAt(hx, hy))
           showDateMenu(selectedDay_);
         else if (!archivedContext_ && selectedDay_ == today() && selectedTaskId() != habits::kInvalidId)
           showTaskMenu(selectedTaskId());
