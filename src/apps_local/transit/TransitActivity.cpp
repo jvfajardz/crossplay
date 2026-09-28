@@ -59,7 +59,7 @@ constexpr OvapiSpec kTram26[2] = {
 };
 
 constexpr TransitousSpec kNs[2] = {
-    {"NS: Overwhere -> Sloterdijk", "nl-OpenOV_stoparea:18008", "Sprinter", "Amsterdam Sloterdijk"},
+    {"NS: Overwhere -> Sloterdijk", "nl-OpenOV_stoparea:18008", "Sprinter", "Hoofddorp"},
     {"NS: Sloterdijk -> Purmerend Overwhere", "nl-OpenOV_stoparea:18177", "Sprinter", "Hoorn Kersenboogerd"},
 };
 
