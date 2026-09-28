@@ -6,7 +6,7 @@ $specs = @(
   @('nl-OpenOV_NL:S:30007408', 30, '52', 'Noord'),
   @('nl-OpenOV_NL:S:30001314', 30, '37', 'Amstelstation'),
   @('nl-OpenOV_NL:S:30009018', 30, '37', 'Station Noord'),
-  @('nl-OpenOV_stoparea:18008', 30, 'Sprinter', 'Amsterdam Sloterdijk'),
+  @('nl-OpenOV_stoparea:18008', 30, 'Sprinter', 'Hoofddorp'),
   @('nl-OpenOV_stoparea:18177', 90, 'Sprinter', 'Hoorn Kersenboogerd')
 )
 
