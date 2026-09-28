@@ -139,7 +139,10 @@ bool Model::setTaskComplete(const Id habitId, const Id taskId, const int day, co
 }
 
 bool Model::setSkipped(const Id habitId, const int day, const bool skipped) {
-  if (!isApplicable(habitId, day)) return false;
+  // A skip is an explicit historical exception. Permit backfilling it before
+  // the habit's creation/schedule history; dayState() will then surface it
+  // ahead of ordinary applicability. The activity owns the no-future rule.
+  if (!findHabit(habitId)) return false;
   for (auto& value : exceptions_) {
     if (value.habitId == habitId && value.day == day) {
       value.skipped = skipped;
@@ -356,9 +359,9 @@ bool Model::isSkipped(const Id habitId, const int day) const {
 }
 
 DayState Model::dayState(const Id habitId, const int day, const int today) const {
-  if (!isApplicable(habitId, day)) return DayState::NotApplicable;
-  if (day > today) return DayState::Future;
+  if (day > today) return isApplicable(habitId, day) ? DayState::Future : DayState::NotApplicable;
   if (isSkipped(habitId, day)) return DayState::Skipped;
+  if (!isApplicable(habitId, day)) return DayState::NotApplicable;
   int total = 0;
   int complete = 0;
   for (const auto& task : tasks_) {

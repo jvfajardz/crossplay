@@ -15,6 +15,7 @@ $checks = [ordered]@{
   'date menu offers task list' = $activity -match '"TASK LIST"'
   'held calendar cell becomes the selected date' = $activity -match 'selectDateAt\(hx, hy\)\)[\s\r\n]+showDateMenu\(selectedDay_\)'
   'skip mutation failure is handled' = $activity -match 'if \(!model_\.setSkipped\(id, day, !skipped\)\)'
+  'future dates cannot be skipped' = $activity -match 'if \(day > today\(\)\)[\s\S]{0,180}"FUTURE DATE"'
   'statistics draw monthly bars' = $activity -match 'MONTHLY COMPLETION' -and $activity -match 'barHeight'
   'task rows use the compact button font' = $activity -match 'drawTextFit\(toybox::kButtonFontId[^\r\n]+task\.name'
   'completed day is a solid mark' = $activity -match 'DayState::Complete\) renderer\.fillRoundedRect\(x, y, size, size'
