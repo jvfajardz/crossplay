@@ -85,6 +85,25 @@ void testHistoricalScheduleAndStats() {
   check(stats.completeDayPercent() == 100, "skipped and current days are excluded from completion rate");
 }
 
+void testPastDateCanBeBackfilledAsSkipped() {
+  habits::Model model;
+  const int today = habits::daysFromCivil(2026, 9, 28);
+  const int past = today - 7;
+  const auto id = model.addHabit("Stretch", today);
+
+  check(!model.isApplicable(id, past), "date before habit creation is not normally applicable");
+  check(model.setSkipped(id, past, true), "past date before habit creation can be marked skipped");
+  check(model.dayState(id, past, today) == habits::DayState::Skipped,
+        "backfilled skip is visible on the calendar");
+
+  const habits::CsvFiles csv = habits::writeCsv(model);
+  habits::Model loaded;
+  const auto result = habits::readCsv(csv, loaded);
+  check(result.ok, "backfilled skip CSV parses after writing");
+  check(loaded.dayState(id, past, today) == habits::DayState::Skipped,
+        "backfilled skip survives a CSV round-trip");
+}
+
 void testCsvRoundTrip() {
   habits::Model source;
   const int day = habits::daysFromCivil(2026, 9, 18);
@@ -111,6 +130,7 @@ int main() {
   testCreationAndNames();
   testScheduleAndStates();
   testHistoricalScheduleAndStats();
+  testPastDateCanBeBackfilledAsSkipped();
   testCsvRoundTrip();
   std::printf("%s %d checks, %d failed\n", failures == 0 ? "PASS" : "FAIL", checks, failures);
   return failures == 0 ? 0 : 1;

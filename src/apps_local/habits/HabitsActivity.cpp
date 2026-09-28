@@ -328,6 +328,12 @@ void HabitsActivity::showTaskMenu(const habits::Id id) {
 }
 
 void HabitsActivity::showDateMenu(const int day) {
+  if (day > today()) {
+    const char* notice[] = {"OK"};
+    popup_.show("FUTURE DATE", notice, 1, 0, [](const int) {});
+    requestUpdate();
+    return;
+  }
   const habits::Id id = selectedHabitId();
   const bool skipped = model_.isSkipped(id, day);
   const char* options[] = {skipped ? "UNSKIP DAY" : "SKIP DAY", "TASK LIST"};
